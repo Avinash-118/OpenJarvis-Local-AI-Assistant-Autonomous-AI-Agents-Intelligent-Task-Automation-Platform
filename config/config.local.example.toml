@@ -1,0 +1,33 @@
+# Local setup for this source checkout. No cloud inference provider is configured.
+[engine]
+default = "ollama"
+
+[engine.ollama]
+host = "http://127.0.0.1:11434"
+
+[intelligence]
+default_model = "llama3.2:latest"
+provider = "local"
+max_tokens = 512
+
+[agent]
+default_agent = "simple"
+
+[server]
+host = "127.0.0.1"
+port = 8766
+model = "llama3.2:latest"
+agent = "simple"
+
+[analytics]
+enabled = false
+choice_recorded = true
+
+[speech]
+backend = "faster-whisper"
+model = "base"
+device = "cpu"
+compute_type = "int8"
+
+[updates]
+auto_update = false

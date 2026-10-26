@@ -1,0 +1,36 @@
+# Local Python / Node installations and generated output
+**/.venv/
+**/venv/
+**/node_modules/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/target/
+**/*.egg-info/
+/.tools/
+/.tmp/
+/.cache/
+/.upstream-git/
+/OpenJarvis/src/openjarvis/server/static/
+/OpenJarvis/desktop/src-tauri/binaries/
+/OpenJarvis/frontend/dist/
+/OpenJarvis/desktop/dist/
+
+# Personal settings, chat databases, models, recordings and credentials
+/.openjarvis-runtime/
+/.local/
+**/.env
+**/.env.*
+!**/.env.example
+**/*credentials*.json
+**/*token*.json
+**/cloud-keys.env
+**/*.db
+**/*.db-*
+**/*.sqlite
+**/*.sqlite3
+**/*.log
+**/*.wav
+**/*.pyc
+Thumbs.db
+.DS_Store
