@@ -4,9 +4,10 @@ A Windows setup for running [OpenJarvis](https://github.com/open-jarvis/OpenJarv
 
 ## Run on this computer
 
-1. Keep Ollama running.
-2. Double-click **Start-OpenJarvis.cmd**.
-3. Open **http://127.0.0.1:8766** if the browser does not open automatically.
+1. Double-click **Start-OpenJarvis.cmd**. It starts Ollama if needed, then starts the OpenJarvis backend and waits for it to become ready.
+2. Open **http://127.0.0.1:8766** if the browser does not open automatically.
+
+After restarting Windows, run this shortcut again. An open or cached browser tab alone does not start the backend. If startup fails, check `.openjarvis-runtime/ollama.log` and `.openjarvis-runtime/server.log`.
 
 Double-click **Stop-OpenJarvis.cmd** to stop this project's server. The default model is **llama3.2:latest**, selected to fit this laptop's memory. Refresh the page after restarting if the browser still shows a different model.
 

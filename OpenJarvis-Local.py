@@ -3,6 +3,7 @@ from pathlib import Path
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ SOURCE = ROOT / 'OpenJarvis'
 STATE = ROOT / '.openjarvis-runtime'
 PYTHON = SOURCE / '.venv' / 'Scripts' / 'python.exe'
 URL = 'http://127.0.0.1:8766'
+OLLAMA_URL = 'http://127.0.0.1:11434'
 
 
 def local_environment():
@@ -46,6 +48,44 @@ def healthy():
         return False
 
 
+def ollama_ready():
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(OLLAMA_URL + '/api/version', timeout=2) as response:
+            return bool(json.load(response).get('version'))
+    except (OSError, ValueError):
+        return False
+
+
+def ensure_ollama(env):
+    """Start the installed local model server when it is not already running."""
+    if ollama_ready():
+        return
+    executable = shutil.which('ollama')
+    if not executable:
+        raise SystemExit('Ollama is not installed or is missing from PATH. Install it, then run this shortcut again.')
+    print('Starting the local Ollama model server...', flush=True)
+    spawn_options = {}
+    if sys.platform == 'win32':
+        spawn_options['creationflags'] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    else:
+        spawn_options['start_new_session'] = True
+    log_path = STATE / 'ollama.log'
+    with log_path.open('a', encoding='utf-8') as log_file:
+        process = subprocess.Popen(
+            [executable, 'serve'], stdout=log_file, stderr=log_file,
+            env={**env, 'OLLAMA_HOST': '127.0.0.1:11434'}, **spawn_options,
+        )
+    deadline = time.monotonic() + 45
+    while time.monotonic() < deadline:
+        if ollama_ready():
+            return
+        if process.poll() is not None:
+            raise SystemExit(f'Ollama could not start. Check {log_path}')
+        time.sleep(1)
+    raise SystemExit(f'Ollama did not become ready. Check {log_path}')
+
+
 def main():
     parser = argparse.ArgumentParser(description='Start or stop the local OpenJarvis installation.')
     parser.add_argument('--stop', action='store_true')
@@ -58,6 +98,7 @@ def main():
     command = [str(PYTHON), '-m', 'openjarvis.cli', '--quiet']
     if args.stop:
         return subprocess.call(command + ['stop'], cwd=SOURCE, env=env)
+    ensure_ollama(env)
     if healthy():
         # Confirm the service is registered to this checkout's state directory.
         state_path = STATE / 'server.json'
