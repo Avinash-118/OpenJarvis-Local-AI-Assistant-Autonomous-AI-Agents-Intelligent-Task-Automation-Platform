@@ -1,3 +1,4 @@
+param([switch]$WithMemory)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'OpenJarvis'
@@ -38,10 +39,14 @@ if (-not (Test-Path -LiteralPath $uvPath)) {
     }
 }
 
-Push-Location $sourceRoot
-try {
-    Invoke-Checked $uvPath @('sync', '--python', '3.13', '--extra', 'desktop', '--no-dev')
-} finally { Pop-Location }
+if ($WithMemory -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'native-memory-enabled'))) {
+    & (Join-Path $projectRoot 'Enable-Memory.ps1') -NoRestart
+} else {
+    Push-Location $sourceRoot
+    try {
+        Invoke-Checked $uvPath @('sync', '--frozen', '--python', '3.13', '--extra', 'desktop', '--extra', 'local-control', '--no-dev')
+    } finally { Pop-Location }
+}
 
 $configPath = Join-Path $runtimeRoot 'config.toml'
 if (-not (Test-Path -LiteralPath $configPath)) {

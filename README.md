@@ -21,11 +21,33 @@ Install Git, Python 3.10 or newer, Node.js 22.22 or newer, and Ollama. Then righ
 
 The setup script installs a separate Python 3.13 environment, downloads the free `llama3.2` model if needed, installs the locked OpenJarvis desktop dependencies, and builds the browser interface. It creates local configuration from `config/config.local.example.toml` without overwriting an existing configuration. Initial setup needs internet access; inference uses the locally downloaded model.
 
-## Voice input
+## Hands-free voice and computer commands
 
-In the app, open **Settings → Speech → Speech-to-Text** and turn it on. In Chat, click the microphone, allow microphone access, speak, click again to stop, then press Enter to send the transcription. Whisper runs locally; its speech model downloads on first use.
+If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Speak normally, then pause for about 1.2 seconds. Jarvis transcribes locally, runs your command or answers your question, speaks using an installed Windows voice, and starts listening again. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. The browser requires the initial click after opening the app; recording never starts secretly on page load.
 
-Spoken replies require the optional Kokoro text-to-speech setup. The initial agent is `simple` chat; controlling applications requires configuring a tool agent.
+Try:
+
+- “Open Gmail” or “Open YouTube.”
+- “Search relaxing music on YouTube” or “Search the web for Chicago weather.”
+- “Open Notepad,” “Open calculator,” “Open Access,” or the name of an installed Start menu app.
+- “Write an email to someone@example.com asking about tomorrow’s meeting.” This opens a populated Gmail draft; review and send it yourself.
+- With another app in the foreground, “Click the search box” or “Fill the search box with relaxing music.” The local model can use accessible Windows controls for a bounded sequence of steps.
+
+Websites open in your normal default browser and can reuse its existing sign-ins. If a site requests a password, verification code, CAPTCHA, or other login step, complete that step in the site. Jarvis does not collect or store passwords. Website controls and Windows accessibility vary, so arbitrary workflows are not guaranteed. It will report unavailable controls instead of claiming completion. YouTube search opens results; selecting a particular video requires an accessible control and a follow-up instruction.
+
+The one-shot microphone remains available for dictation into the message box. Hands-free voice needs no Kokoro model or paid speech service. Whisper may download its free speech model on first use. Small local language models can take several seconds to answer on this laptop.
+
+Desktop commands are enabled only by this project's launcher, only on Windows, and only through the local same-origin interface. Generated shell commands are never executed. Use **Stop generating** to cancel a running task; stopping voice mode stops listening and playback.
+
+## Optional native memory
+
+SQLite memory requires OpenJarvis's Rust extension. Install Visual Studio Build Tools with **Desktop development with C++**, then run:
+
+```powershell
+.\Enable-Memory.ps1
+```
+
+This installs the pinned Rust 1.89 toolchain inside `.tools`, checks the official installer's SHA-256, builds the native extension, and restarts Jarvis. The first build can take a while. Subsequent setup runs preserve memory through a local marker. For a fresh clone with the C++ prerequisites installed, use `.\Setup-OpenJarvis.ps1 -WithMemory`.
 
 ## Layout
 
@@ -33,6 +55,7 @@ Spoken replies require the optional Kokoro text-to-speech setup. The initial age
 - `OpenJarvis-Local.py`: launcher with local inference settings and no inherited cloud API credentials.
 - `Start-OpenJarvis.cmd` / `Stop-OpenJarvis.cmd`: Windows shortcuts.
 - `Setup-OpenJarvis.ps1`: repeatable setup for a fresh checkout.
+- `Enable-Memory.ps1`: optional project-local Rust/native memory setup.
 - `config/config.local.example.toml`: shareable configuration template.
 - `.openjarvis-runtime/`: personal configuration, databases, downloaded speech models and logs. Kept locally and excluded from Git.
 - `.upstream-git/`: original upstream Git history retained locally after the move; excluded from this repository.

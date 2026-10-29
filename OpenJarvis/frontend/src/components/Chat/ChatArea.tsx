@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { MessageBubble } from './MessageBubble';
+import { useVoiceSession } from '../../hooks/useHandsFree';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
@@ -61,7 +62,7 @@ export function ChatArea() {
     );
     streamingConversationRef.current = isCurrentChatStreaming ? activeId : null;
 
-    if (!justFinished) return;
+    if (!justFinished || useVoiceSession.getState().active) return;
     if (!voiceOutputEnabled || !voiceAutoplay) return;
 
     if (!last || last.role !== 'assistant' || activeId === null) return;
@@ -76,6 +77,7 @@ export function ChatArea() {
       const currentLast = app.messages[app.messages.length - 1];
       if (app.activeId !== completedConversationId || app.streamState.isStreaming) return;
       if (!app.settings.voiceOutputEnabled || !app.settings.voiceAutoplay) return;
+      if (useVoiceSession.getState().active) return;
       if (currentLast?.id !== completedMessageId || currentTts.available !== true) return;
       if (currentTts.autoSpokenId === completedMessageId) return;
 

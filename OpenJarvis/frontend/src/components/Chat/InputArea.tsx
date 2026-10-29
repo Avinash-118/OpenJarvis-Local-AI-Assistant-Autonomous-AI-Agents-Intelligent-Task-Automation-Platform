@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square, Paperclip, Search } from 'lucide-react';
+import { Send, Square, Paperclip, Search, Headphones } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
@@ -10,6 +10,8 @@ import {
   engineFromCompletionChunk,
   resolveChatEngine,
 } from '../../lib/chat-telemetry';
+import { runDesktopCommand } from '../../lib/desktop-command';
+import { useHandsFree } from '../../hooks/useHandsFree';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
@@ -171,12 +173,12 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
-    if (!content || streamState.isStreaming) return;
+  const sendMessage = useCallback(async (spokenText?: string): Promise<string> => {
+    const content = (spokenText ?? input).trim();
+    if (!content || useAppStore.getState().streamState.isStreaming) return '';
     if (!selectedModel) {
       toast.error('Pick a model first (⌘K)');
-      return;
+      return 'Please select a local model first.';
     }
 
     setInput('');
@@ -250,7 +252,12 @@ export function InputArea() {
     });
 
     try {
-      if (deepResearch) {
+      const desktop = deepResearch ? { handled: false } : await runDesktopCommand(content, apiMessages, controller.signal);
+      if (desktop.handled) {
+        accumulatedContent = desktop.response || 'The action finished without a response.';
+        routedEngine = 'windows';
+        for (const action of desktop.actions ?? []) toolCalls.push({ id: generateId(), tool: action, arguments: content, status: 'success', result: accumulatedContent });
+      } else if (deepResearch) {
         for await (const ev of streamResearch(
           content,
           selectedModel,
@@ -539,6 +546,7 @@ export function InputArea() {
           .catch(() => {});
       }
     }
+    return accumulatedContent;
   }, [
     input,
     activeId,
@@ -553,6 +561,9 @@ export function InputArea() {
     temperature,
     maxTokens,
   ]);
+
+  const voice = useHandsFree(sendMessage, streamState.isStreaming);
+  const voiceLabels = { off: 'Voice mode', starting: 'Allow microphone access in your browser…', listening: 'Listening — speak, then pause', transcribing: 'Transcribing locally…', working: 'Working on your request…', speaking: 'Speaking — then listening again' };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -581,6 +592,14 @@ export function InputArea() {
             <Search size={12} />
             Deep Research
           </button>
+          <button type="button" onClick={() => { if (voice.active) voice.stop(); else { setDeepResearch(false); void voice.start(); } }}
+            aria-pressed={voice.active} aria-label={voice.active ? 'Stop voice mode' : 'Start voice mode'}
+            disabled={!voice.active && (!speechAvailable || modelLoading || !selectedModel || streamState.isStreaming || speechState !== 'idle')}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs cursor-pointer disabled:opacity-40"
+            style={{ background: voice.active ? 'var(--color-accent-subtle)' : 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: voice.active ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}
+            title="Listen continuously, send after a pause, and reply using a local Windows voice">
+            <Headphones size={14} />{voice.active ? 'Stop voice' : 'Start voice mode'}
+          </button>
         </div>
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (
           <div
@@ -595,6 +614,11 @@ export function InputArea() {
           </div>
         )}
       </div>
+      {(voice.active || voice.error) && <div role="status" aria-live="polite" className="mb-2 rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-text-secondary)' }}>
+        <div>{voice.error || voiceLabels[voice.phase]}{voice.active && ' · Say “stop listening” to end'}</div>
+        {voice.active && <div aria-hidden="true" className="h-1 mt-2 rounded" style={{ width: `${Math.max(3, voice.level * 100)}%`, background: 'var(--color-accent)', transition: 'width 80ms' }} />}
+        {voice.heard && <div className="mt-1">Heard: {voice.heard}</div>}
+      </div>}
       <div
         className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
@@ -628,11 +652,11 @@ export function InputArea() {
             <MicButton
               state={speechState}
               onClick={handleMicClick}
-              disabled={micDisabled}
+              disabled={micDisabled || voice.active}
               reason={micReason}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => { void sendMessage(); }}
               disabled={streamState.isStreaming || !input.trim() || modelLoading || !selectedModel}
               title={selectedModel ? 'Send message' : 'Pick a model first (⌘K)'}
               className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"

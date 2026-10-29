@@ -30,6 +30,7 @@ def local_environment():
     env.update({
         'OPENJARVIS_HOME': str(STATE),
         'OPENJARVIS_NO_UPDATE_CHECK': '1',
+        'OPENJARVIS_DESKTOP_CONTROL': '1',
         'JARVIS_NUM_CTX': '4096',
         'PYTHONUTF8': '1',
         'PYTHONIOENCODING': 'utf-8',

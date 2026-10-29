@@ -474,6 +474,9 @@ def create_app(
                 except Exception:
                     pass
 
+    from openjarvis.server.desktop_routes import router as desktop_router
+
+    app.include_router(desktop_router)
     app.include_router(router)
     app.include_router(dashboard_router)
     app.include_router(comparison_router)
