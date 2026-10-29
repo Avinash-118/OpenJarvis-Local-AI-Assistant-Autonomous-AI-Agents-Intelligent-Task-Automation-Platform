@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router';
+import { requestVoiceStart } from '../lib/voice-session';
+import { useTtsStore } from '../lib/tts';
 import {
   Palette,
   Globe,
@@ -286,6 +289,12 @@ const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 export function SettingsPage() {
+  const navigate = useNavigate();
+  const ttsState = useTtsStore((s) => s.state);
+  const ttsId = useTtsStore((s) => s.speakingId);
+  const ttsError = useTtsStore((s) => s.error);
+  const ttsErrorId = useTtsStore((s) => s.errorId);
+  const voiceTestBusy = ttsId === 'settings-voice-test' && ttsState !== 'idle';
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const conversations = useAppStore((s) => s.conversations);
@@ -784,6 +793,14 @@ export function SettingsPage() {
 
           {/* Speech */}
           <Section title="Speech">
+            <SettingRow label="Hands-free conversation" description="Speak, pause, hear a reply, and listen again. Allow microphone access when asked.">
+              <button type="button" disabled={!speechBackendAvailable || !ttsBackend?.available}
+                onClick={() => { requestVoiceStart(); navigate('/'); }}
+                className="px-3 py-2 rounded-lg text-xs whitespace-nowrap cursor-pointer disabled:opacity-40"
+                style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                Start voice mode
+              </button>
+            </SettingRow>
             <SettingRow label="Speech-to-Text" description="Enable microphone input for voice dictation">
               <button
                 onClick={() => { updateSettings({ speechEnabled: !settings.speechEnabled }); showSaved(); }}
@@ -848,11 +865,24 @@ export function SettingsPage() {
                 />
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   {ttsBackend === null ? 'Checking...'
-                    : ttsBackend.available ? `${ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id}` : ''}`
+                    : ttsBackend.available ? `${ttsBackend.backend === 'windows' ? 'Windows (local)' : ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id}` : ''}`
                     : 'Not configured'}
                 </span>
               </div>
             </SettingRow>
+            <SettingRow label="Test spoken reply" description="Play a short greeting through the configured voice and your current speakers.">
+              <button type="button" disabled={!ttsBackend?.available}
+                onClick={() => {
+                  const tts = useTtsStore.getState();
+                  if (voiceTestBusy) tts.stop();
+                  else void tts.speak('settings-voice-test', 'Hello! Jarvis is ready. I can speak to you using this local Windows voice.');
+                }}
+                className="px-3 py-2 rounded-lg text-xs cursor-pointer disabled:opacity-40"
+                style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                {voiceTestBusy ? 'Stop test' : 'Test voice'}
+              </button>
+            </SettingRow>
+            {ttsErrorId === 'settings-voice-test' && ttsError && <p role="alert" className="text-xs" style={{ color: 'var(--color-error)' }}>{ttsError}</p>}
             <SettingRow label="Backend status" description="Requires Whisper, Deepgram, or another speech backend">
               <div className="flex items-center gap-2">
                 <span

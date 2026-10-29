@@ -11,6 +11,7 @@ import {
   resolveChatEngine,
 } from '../../lib/chat-telemetry';
 import { runDesktopCommand } from '../../lib/desktop-command';
+import { useVoiceSession } from '../../lib/voice-session';
 import { useHandsFree } from '../../hooks/useHandsFree';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
@@ -563,6 +564,14 @@ export function InputArea() {
   ]);
 
   const voice = useHandsFree(sendMessage, streamState.isStreaming);
+  const voiceRequested = useVoiceSession((s) => s.startRequested);
+  useEffect(() => {
+    if (!voiceRequested || !speechAvailable || !selectedModel || modelLoading || streamState.isStreaming) return;
+    useVoiceSession.setState({ startRequested: false });
+    setDeepResearch(false);
+    void voice.start();
+  }, [voiceRequested, speechAvailable, selectedModel, modelLoading, streamState.isStreaming, voice.start, setDeepResearch]);
+
   const voiceLabels = { off: 'Voice mode', starting: 'Allow microphone access in your browser…', listening: 'Listening — speak, then pause', transcribing: 'Transcribing locally…', working: 'Working on your request…', speaking: 'Speaking — then listening again' };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

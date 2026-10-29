@@ -1125,6 +1125,10 @@ def _tts_voice_and_speed(request: Request, backend) -> tuple[str, float]:
     active = getattr(backend, "backend_id", "")
     if active and active != preferred:
         voice_id = default_voice_for(active)
+    if not voice_id:
+        default_voice = getattr(backend, "default_voice_id", "")
+        if isinstance(default_voice, str):
+            voice_id = default_voice
     return voice_id, speed
 
 

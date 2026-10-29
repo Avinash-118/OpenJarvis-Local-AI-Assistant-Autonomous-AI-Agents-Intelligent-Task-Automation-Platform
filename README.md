@@ -23,6 +23,8 @@ The setup script installs a separate Python 3.13 environment, downloads the free
 
 ## Hands-free voice and computer commands
 
+In **Settings → Speech**, **Voice** should show **Windows (local)** and an installed voice such as Microsoft David. Click **Test voice** to check playback, then **Start voice mode** to open Chat and begin listening. Read-aloud buttons and automatic spoken replies use the same backend.
+
 If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Speak normally, then pause for about 1.2 seconds. Jarvis transcribes locally, runs your command or answers your question, speaks using an installed Windows voice, and starts listening again. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. The browser requires the initial click after opening the app; recording never starts secretly on page load.
 
 Try:

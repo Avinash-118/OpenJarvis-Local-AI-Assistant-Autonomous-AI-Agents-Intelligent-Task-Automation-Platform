@@ -37,8 +37,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
-        navigateFallbackDenylist: [/^\/v1\//, /^\/health/, /^\/dashboard/, /^\/api\//],
+        // The local backend must serve the current HTML after an upgrade.
+        // Cache immutable assets, but never pin navigation to an old app shell.
+        globPatterns: ['**/*.{js,css,ico,png,svg}'],
+        navigateFallback: null,
       },
     }),
   ],

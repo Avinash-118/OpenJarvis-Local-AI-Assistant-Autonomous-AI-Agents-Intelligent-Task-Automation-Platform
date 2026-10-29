@@ -1,3 +1,4 @@
+import { MemoryRouter } from 'react-router';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -6,7 +7,7 @@ describe('desktop cloud provider settings', () => {
     vi.stubGlobal('localStorage', { getItem: () => null });
     vi.stubGlobal('window', { __TAURI_INTERNALS__: {} });
     const { SettingsPage } = await import('./SettingsPage');
-    const html = renderToStaticMarkup(<SettingsPage />);
+    const html = renderToStaticMarkup(<MemoryRouter><SettingsPage /></MemoryRouter>);
 
     expect(html).toContain('Atlas Cloud');
     const atlasKeyInput = html.match(/<input[^>]*placeholder="Atlas Cloud API key"[^>]*>/)?.[0];

@@ -25,6 +25,9 @@ enabled = false
 choice_recorded = true
 
 [speech]
+tts_backend = "windows"
+voice_id = ""
+voice_speed = 1.0
 backend = "faster-whisper"
 model = "base"
 device = "cpu"

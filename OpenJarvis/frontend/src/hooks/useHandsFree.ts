@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { create } from 'zustand';
-import { transcribeAudio } from '../lib/api';
+import { transcribeAudio, synthesizeSpeech } from '../lib/api';
 import { toSpeakableText } from '../lib/message-text';
-import { speakDesktop } from '../lib/desktop-command';
+import { useVoiceSession } from '../lib/voice-session';
+export { useVoiceSession } from '../lib/voice-session';
 import { VoiceActivity } from '../lib/voice-activity';
 import { useTtsStore } from '../lib/tts';
 
-export const useVoiceSession = create<{ active: boolean }>(() => ({ active: false }));
 type Phase = 'off' | 'starting' | 'listening' | 'transcribing' | 'working' | 'speaking';
 
 /** All recognition stays in local Whisper; output uses an installed OS voice. */
@@ -114,7 +113,7 @@ export function useHandsFree(onTurn: (text: string) => Promise<string>, busy: bo
         if (!spoken || !live()) return;
         const controller = new AbortController();
         cancelWait.current = () => controller.abort();
-        const blob = await speakDesktop(spoken, controller.signal);
+        const blob = await synthesizeSpeech(spoken, { signal: controller.signal });
         if (!live()) return;
         setPhase('speaking');
         const url = URL.createObjectURL(blob);

@@ -537,31 +537,10 @@ def health(request: Request):
 
 
 def windows_speech(text: str) -> bytes:
-    "Render with an installed Windows voice; remove the temporary WAV immediately."
-    import tempfile
+    """Compatibility endpoint; use the same Windows backend as normal read-aloud."""
+    from openjarvis.speech.windows_tts import WindowsTTSBackend
 
-    import pythoncom
-    import win32com.client
-
-    pythoncom.CoInitialize()
-    voice = audio = None
-    try:
-        with tempfile.TemporaryDirectory(prefix="jarvis-speech-") as folder:
-            path = str(Path(folder) / "reply.wav")
-            voice = win32com.client.Dispatch("SAPI.SpVoice")
-            audio = win32com.client.Dispatch("SAPI.SpFileStream")
-            audio.Open(path, 3, False)
-            voice.AudioOutputStream = audio
-            voice.Speak(text, 16)
-            audio.Close()
-            audio = None
-            voice = None
-            return Path(path).read_bytes()
-    finally:
-        if audio is not None:
-            audio.Close()
-        voice = audio = None
-        pythoncom.CoUninitialize()
+    return WindowsTTSBackend().synthesize(text, output_format="wav").audio
 
 
 @router.post("/speak")

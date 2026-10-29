@@ -2,18 +2,6 @@ import { apiFetch } from './api';
 
 export interface DesktopReply { handled: boolean; response?: string; actions?: string[] }
 
-export async function speakDesktop(text: string, signal: AbortSignal): Promise<Blob> {
-  const res = await apiFetch('/v1/desktop/speak', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jarvis-Desktop': '1' },
-    body: JSON.stringify({ text }), signal,
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || 'Windows speech output is unavailable.');
-  }
-  return res.blob();
-}
-
 export async function runDesktopCommand(
   text: string,
   messages: Array<{ role: string; content: string }>,
