@@ -1,13 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { GetStartedPage } from './pages/GetStartedPage';
-import { AgentsPage } from './pages/AgentsPage';
-import { DataSourcesPage } from './pages/DataSourcesPage';
-import { LogsPage } from './pages/LogsPage';
 import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
@@ -17,6 +11,21 @@ import { OptInModal } from './components/OptInModal';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 import { offerAnalyticsChoice } from './lib/analytics-invitation';
+
+// Load secondary pages when visited so opening chat doesn't download and parse
+// the agent editor, settings, and data-source management UI.
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const GetStartedPage = lazy(() => import('./pages/GetStartedPage').then((m) => ({ default: m.GetStartedPage })));
+const AgentsPage = lazy(() => import('./pages/AgentsPage').then((m) => ({ default: m.AgentsPage })));
+const DataSourcesPage = lazy(() => import('./pages/DataSourcesPage').then((m) => ({ default: m.DataSourcesPage })));
+const LogsPage = lazy(() => import('./pages/LogsPage').then((m) => ({ default: m.LogsPage })));
+
+const page = (component: ReactNode) => (
+  <Suspense fallback={<div role="status" className="p-6 text-sm text-muted-foreground">Loading page…</div>}>
+    {component}
+  </Suspense>
+);
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -185,12 +194,12 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<ChatPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="get-started" element={<GetStartedPage />} />
-          <Route path="data-sources" element={<DataSourcesPage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="logs" element={<LogsPage />} />
+          <Route path="dashboard" element={page(<DashboardPage />)} />
+          <Route path="settings" element={page(<SettingsPage />)} />
+          <Route path="get-started" element={page(<GetStartedPage />)} />
+          <Route path="data-sources" element={page(<DataSourcesPage />)} />
+          <Route path="agents" element={page(<AgentsPage />)} />
+          <Route path="logs" element={page(<LogsPage />)} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

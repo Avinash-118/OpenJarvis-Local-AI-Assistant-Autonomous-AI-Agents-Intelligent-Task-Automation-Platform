@@ -31,6 +31,7 @@ def local_environment():
         'OPENJARVIS_HOME': str(STATE),
         'OPENJARVIS_NO_UPDATE_CHECK': '1',
         'OPENJARVIS_DESKTOP_CONTROL': '1',
+        'OPENJARVIS_DISCOVER_ENGINES': '0',
         'JARVIS_NUM_CTX': '4096',
         'PYTHONUTF8': '1',
         'PYTHONIOENCODING': 'utf-8',
@@ -114,6 +115,7 @@ def main():
         except psutil.Error:
             raise SystemExit('Could not verify the existing OpenJarvis process. Check server.log.')
     else:
+        print('Starting Jarvis. The browser will open when it is ready...', flush=True)
         result = subprocess.call(command + ['start', '--host', '127.0.0.1', '--port', '8766',
                                             '--engine', 'ollama', '--model', 'llama3.2:latest', '--agent', 'simple'],
                                  cwd=SOURCE, env=env)

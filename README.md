@@ -9,6 +9,8 @@ A Windows setup for running [OpenJarvis](https://github.com/open-jarvis/OpenJarv
 
 After restarting Windows, run this shortcut again. An open or cached browser tab alone does not start the backend. If startup fails, check `.openjarvis-runtime/ollama.log` and `.openjarvis-runtime/server.log`.
 
+Startup loads only the server commands and uses the configured Ollama engine without probing unused services. Chat loads secondary pages on demand. Starting a stopped backend still takes a short wait; reopening the page while Jarvis is running is much faster.
+
 Double-click **Stop-OpenJarvis.cmd** to stop this project's server. The default model is **llama3.2:latest**, selected to fit this laptop's memory. Refresh the page after restarting if the browser still shows a different model.
 
 ## Set up a fresh clone

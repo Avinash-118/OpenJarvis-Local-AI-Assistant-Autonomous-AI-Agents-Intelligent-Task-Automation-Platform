@@ -26,6 +26,13 @@ _DATA_BOUNDARY_BOOTSTRAP = (
     _invoked_command(sys.argv[1:]) == "scan" and "--data-boundaries" in sys.argv[1:]
 )
 
+# The desktop launcher executes two CLI processes (start, then serve). Importing
+# every command in both processes loads unrelated cloud SDKs and research code
+# before the local web server can bind. Keep these entry points lightweight;
+# bare CLI/help and programmatic CliRunner callers retain the full command set.
+_SERVER_COMMAND = _invoked_command(sys.argv[1:])
+_SERVER_BOOTSTRAP = _SERVER_COMMAND in {"start", "stop", "restart", "status", "serve"}
+
 
 def _should_skip_update_check(ctx: click.Context, argv: list[str]) -> bool:
     """Return true for commands whose diagnostics should remain local-only."""
@@ -96,7 +103,17 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool, pick_model_bare: bool) -
 
 
 cli.add_command(scan, "scan")
-if not _DATA_BOUNDARY_BOOTSTRAP:
+if _SERVER_BOOTSTRAP:
+    if _SERVER_COMMAND == "serve":
+        from openjarvis.cli.serve import serve
+
+        cli.add_command(serve, "serve")
+    else:
+        from openjarvis.cli.daemon_cmd import restart, start, status, stop
+
+        for command in (start, stop, restart, status):
+            cli.add_command(command)
+elif not _DATA_BOUNDARY_BOOTSTRAP:
     from openjarvis.cli._bootstrap import bootstrap_cmd
     from openjarvis.cli.add_cmd import add
     from openjarvis.cli.agent_cmd import agent

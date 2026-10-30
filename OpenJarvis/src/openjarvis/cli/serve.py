@@ -81,6 +81,14 @@ def _safe_list_models(engine: object) -> list[str]:
         return []
 
 
+def _startup_engines(config, engine_name: str, engine):
+    """Allow a single-engine installation to skip unrelated network probes."""
+    if os.environ.get("OPENJARVIS_DISCOVER_ENGINES", "1") == "0":
+        # get_engine() already checked this engine and the requested model.
+        return [(engine_name, engine)]
+    return discover_engines(config)
+
+
 def _resolve_server_model(
     requested_model: str | None,
     *,
@@ -258,7 +266,7 @@ def serve(
         logger.debug("Engine instrumentation failed: %s", exc)
 
     # Discover models
-    all_engines = discover_engines(config)
+    all_engines = _startup_engines(config, engine_name, engine)
     all_models = discover_models(all_engines)
     for ek, model_ids in all_models.items():
         merge_discovered_models(ek, model_ids)
