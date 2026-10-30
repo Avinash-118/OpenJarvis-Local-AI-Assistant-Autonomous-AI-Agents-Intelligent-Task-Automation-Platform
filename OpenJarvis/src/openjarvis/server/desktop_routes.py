@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -27,6 +28,7 @@ router = APIRouter(prefix="/v1/desktop", tags=["local-desktop"])
 _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jarvis-desktop")
 _jobs: dict[str, threading.Event] = {}
 _busy = threading.Lock()
+_voice_file_lock = threading.Lock()
 
 SITES = {
     "gmail": "https://mail.google.com/",
@@ -78,6 +80,15 @@ class Cancel(BaseModel):
 
 class Speak(BaseModel):
     text: str = Field(min_length=1, max_length=2500)
+
+
+class BrowserVoice(BaseModel):
+    active: bool
+    token: str = Field(min_length=16, max_length=100)
+
+
+class PauseVoice(BaseModel):
+    paused: bool
 
 
 def _guard(request: Request):
@@ -521,6 +532,84 @@ def execute(body: Command, engine, model: str, cancelled: threading.Event) -> di
             reply = _ui_task(body, engine, model, cancelled)
             actions = ["windows_ui"]
     return {"handled": reply is not None, "response": reply, "actions": actions}
+
+
+def _voice_root() -> Path:
+    from openjarvis.core.paths import get_config_dir
+
+    return get_config_dir()
+
+
+def _voice_json(path: Path) -> dict:
+    try:
+        if path.stat().st_size > 8192:
+            return {}
+        value = json.loads(path.read_text("utf-8-sig"))
+        return value if isinstance(value, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+@router.get("/voice")
+def background_voice_status(request: Request):
+    _guard(request)
+    root = _voice_root()
+    state = _voice_json(root / "background-voice.json")
+    running = False
+    try:
+        import psutil
+
+        process = psutil.Process(int(state["pid"]))
+        expected = str((root.parent / "jarvis_background.py").resolve()).casefold()
+        running = time.time() - float(state["updated_at"]) < 15 and expected in [
+            str(Path(arg).resolve()).casefold()
+            for arg in process.cmdline()[1:]
+            if arg.endswith(".py")
+        ]
+    except (KeyError, TypeError, ValueError, OSError, psutil.Error):
+        pass
+    return {
+        "running": running,
+        "phase": state.get("phase", "stopped") if running else "stopped",
+        "error": state.get("error") if running else None,
+        "wake_word": "Jarvis",
+        "paused": (root / "voice-paused").exists(),
+        "autostart": (root / "background-voice-enabled.json").exists(),
+    }
+
+
+@router.post("/voice/pause")
+def pause_background_voice(body: PauseVoice, request: Request):
+    _guard(request)
+    path = _voice_root() / "voice-paused"
+    if body.paused:
+        path.touch()
+        for job_id, event in list(_jobs.items()):
+            if job_id.startswith("background-"):
+                event.set()
+    else:
+        path.unlink(missing_ok=True)
+    return {"paused": body.paused}
+
+
+@router.post("/voice/browser")
+def browser_voice_lease(body: BrowserVoice, request: Request):
+    _guard(request)
+    path = _voice_root() / "browser-voice.json"
+    with _voice_file_lock:
+        if body.active:
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(
+                json.dumps({"token": body.token, "expires_at": time.time() + 15}),
+                "utf-8",
+            )
+            temporary.replace(path)
+            for job_id, event in list(_jobs.items()):
+                if job_id.startswith("background-"):
+                    event.set()
+        elif _voice_json(path).get("token") == body.token:
+            path.unlink(missing_ok=True)
+    return {"active": body.active}
 
 
 @router.get("/health")

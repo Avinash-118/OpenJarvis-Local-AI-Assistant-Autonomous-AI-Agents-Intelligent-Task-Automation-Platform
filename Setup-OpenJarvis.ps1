@@ -5,6 +5,12 @@ $sourceRoot = Join-Path $projectRoot 'OpenJarvis'
 $runtimeRoot = Join-Path $projectRoot '.openjarvis-runtime'
 $toolsRoot = Join-Path $projectRoot '.tools'
 $taskTempRoot = Join-Path $projectRoot '.tmp'
+$existingBackground = Join-Path $runtimeRoot 'background-voice-enabled.json'
+$existingPython = Join-Path $sourceRoot '.venv\Scripts\python.exe'
+if ((Test-Path -LiteralPath $existingBackground) -and (Test-Path -LiteralPath $existingPython)) {
+    & $existingPython (Join-Path $projectRoot 'jarvis_background.py') --stop
+    Start-Sleep -Seconds 3
+}
 foreach ($folder in @($runtimeRoot, $toolsRoot, $taskTempRoot)) {
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
 }
@@ -63,4 +69,7 @@ try {
     Invoke-Checked 'npx.cmd' @('--yes', 'npm@11.19.0', 'ci', '--no-audit', '--no-fund')
     Invoke-Checked 'npm.cmd' @('run', 'build')
 } finally { Pop-Location }
+if (Test-Path -LiteralPath (Join-Path $runtimeRoot 'background-voice-enabled.json')) {
+    & (Join-Path $projectRoot 'Enable-BackgroundVoice.ps1') -NoStart
+}
 Write-Host 'Setup complete. Double-click Start-OpenJarvis.cmd to open Jarvis AI Agent.'

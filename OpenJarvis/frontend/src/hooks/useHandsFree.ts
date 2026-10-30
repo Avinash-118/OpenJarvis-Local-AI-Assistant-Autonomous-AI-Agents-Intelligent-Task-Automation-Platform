@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { transcribeAudio, synthesizeSpeech } from '../lib/api';
+import { apiFetch, transcribeAudio, synthesizeSpeech } from '../lib/api';
 import { toSpeakableText } from '../lib/message-text';
 import { useVoiceSession } from '../lib/voice-session';
 export { useVoiceSession } from '../lib/voice-session';
@@ -22,6 +22,12 @@ export function useHandsFree(onTurn: (text: string) => Promise<string>, busy: bo
   busyRef.current = busy;
   const release = useRef<() => void>(() => {});
   const cancelWait = useRef<() => void>(() => {});
+  const lease = useRef<string | null>(null);
+  const leaseTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const browserLease = (active: boolean, token: string) => apiFetch('/v1/desktop/voice/browser', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Jarvis-Desktop': '1' },
+    body: JSON.stringify({ active, token }), signal: AbortSignal.timeout(1500),
+  }).catch(() => null);
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
   const stop = useCallback(() => {
@@ -29,6 +35,10 @@ export function useHandsFree(onTurn: (text: string) => Promise<string>, busy: bo
     generation.current += 1;
     cancelWait.current();
     release.current();
+    if (leaseTimer.current) clearInterval(leaseTimer.current);
+    leaseTimer.current = null;
+    if (lease.current) void browserLease(false, lease.current);
+    lease.current = null;
     window.speechSynthesis?.cancel();
     useVoiceSession.setState({ active: false });
     setPhase('off');
@@ -53,6 +63,11 @@ export function useHandsFree(onTurn: (text: string) => Promise<string>, busy: bo
       if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
         throw new Error('Use Chrome or Edge on localhost for microphone access.');
       }
+      const token = crypto.randomUUID();
+      lease.current = token;
+      await browserLease(true, token);
+      if (!live()) return;
+      leaseTimer.current = setInterval(() => { void browserLease(true, token); }, 5000);
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });

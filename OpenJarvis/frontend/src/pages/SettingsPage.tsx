@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router';
 import { requestVoiceStart } from '../lib/voice-session';
 import { useTtsStore } from '../lib/tts';
+import { BackgroundVoiceStatus } from '../components/BackgroundVoiceStatus';
 import {
   Palette,
   Globe,
@@ -793,6 +794,7 @@ export function SettingsPage() {
 
           {/* Speech */}
           <Section title="Speech">
+              <BackgroundVoiceStatus />
             <SettingRow label="Hands-free conversation" description="Speak, pause, hear a reply, and listen again. Allow microphone access when asked.">
               <button type="button" disabled={!speechBackendAvailable || !ttsBackend?.available}
                 onClick={() => { requestVoiceStart(); navigate('/'); }}

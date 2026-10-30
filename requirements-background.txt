@@ -1,0 +1,4 @@
+# Offline wake-word recognition and a visible Windows tray control.
+vosk==0.3.45
+pystray==0.19.5
+Pillow==13.0.0
