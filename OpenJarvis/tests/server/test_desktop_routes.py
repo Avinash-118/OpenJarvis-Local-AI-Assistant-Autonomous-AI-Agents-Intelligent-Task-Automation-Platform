@@ -6,8 +6,15 @@ from unittest.mock import Mock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-
 from openjarvis.server import desktop_routes as desktop
+from openjarvis.server.windows_apps import WindowsApp
+
+
+@pytest.fixture(autouse=True)
+def no_real_app_launches(monkeypatch):
+    monkeypatch.setattr(desktop, "find_app", lambda name: None)
+    monkeypatch.setattr(desktop, "activate_app", Mock())
+    monkeypatch.setattr(desktop, "installed_apps", lambda: ())
 
 
 def command(text, messages=None):
@@ -211,3 +218,113 @@ def test_new_open_command_takes_priority_over_unfinished_email(monkeypatch):
     assert result["response"] == "I opened YouTube."
     draft.assert_not_called()
     opened.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "text,name",
+    [
+        ("Jarvis, can you please open Whats App?", "WhatsApp"),
+        ("open what's app", "WhatsApp"),
+        ("open Chat G P T", "ChatGPT"),
+        ("Jarvis, OpenChat, GPT.", "ChatGPT"),
+        ("Jarvis, OpenWhatsApp.", "WhatsApp"),
+        ("open the WhatsApp desktop app, please", "WhatsApp"),
+        ("launch ChatGPT app", "ChatGPT"),
+        ("open Spotify", "Spotify"),
+    ],
+)
+def test_registered_app_preferred_over_website(monkeypatch, text, name):
+    app = WindowsApp(name, "registered!App")
+    find = Mock(
+        side_effect=lambda target: (
+            app if desktop.name_key(target) == desktop.name_key(name) else None
+        )
+    )
+    opened = Mock()
+    monkeypatch.setattr(desktop, "find_app", find)
+    monkeypatch.setattr(desktop, "_open_url", opened)
+    result = run(text)
+    assert result["response"] == f"I opened {name}."
+    assert result["actions"] == ["launch_app"]
+    desktop.activate_app.assert_called_once_with(app)
+    opened.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "text,url",
+    [
+        ("open WhatsApp web", "https://web.whatsapp.com/"),
+        ("open Chat GPT in the browser", "https://chatgpt.com/"),
+        ("open ChatGPT website", "https://chatgpt.com/"),
+        ("open https://chatgpt.com/", "https://chatgpt.com/"),
+    ],
+)
+def test_explicit_browser_request_skips_native_app(monkeypatch, text, url):
+    find = Mock(side_effect=AssertionError("Must not look for a native app"))
+    opened = Mock()
+    monkeypatch.setattr(desktop, "find_app", find)
+    monkeypatch.setattr(desktop, "_open_url", opened)
+    assert run(text)["actions"] == ["open_website"]
+    opened.assert_called_once_with(url)
+    desktop.activate_app.assert_not_called()
+
+
+def test_missing_native_app_uses_website_and_says_so(monkeypatch):
+    opened = Mock()
+    monkeypatch.setattr(desktop, "_open_url", opened)
+    result = run("open chat gpt")
+    assert "in your browser" in result["response"]
+    opened.assert_called_once_with("https://chatgpt.com/")
+
+
+def test_explicit_missing_desktop_app_does_not_silently_open_browser(monkeypatch):
+    opened = Mock()
+    monkeypatch.setattr(desktop, "_open_url", opened)
+    monkeypatch.setattr(
+        desktop, "_launch_app", Mock(side_effect=ValueError("Not installed"))
+    )
+    with pytest.raises(ValueError, match="Not installed"):
+        run("open WhatsApp desktop app")
+    opened.assert_not_called()
+
+
+def test_cancellation_during_discovery_prevents_activation(monkeypatch):
+    cancelled = threading.Event()
+
+    def find(name):
+        cancelled.set()
+        return WindowsApp("WhatsApp", "registered!App")
+
+    monkeypatch.setattr(desktop, "find_app", find)
+    result = desktop.execute(command("open WhatsApp"), Mock(), "local", cancelled)
+    assert result["response"] == "Stopped."
+    desktop.activate_app.assert_not_called()
+
+
+def test_list_apps_uses_windows_inventory_without_model_or_launch(monkeypatch):
+    inventory = (
+        WindowsApp("WhatsApp", "private!App"),
+        WindowsApp("ChatGPT", "private2!App"),
+    )
+    monkeypatch.setattr(desktop, "installed_apps", lambda: inventory)
+    engine = Mock()
+    result = desktop.execute(
+        command("what apps can you open?"), engine, "local", threading.Event()
+    )
+    assert "WhatsApp" in result["response"] and "ChatGPT" in result["response"]
+    assert "private" not in result["response"]
+    engine.generate.assert_not_called()
+    desktop.activate_app.assert_not_called()
+
+
+def test_app_directory_is_local_and_omits_internal_ids(client, monkeypatch):
+    monkeypatch.setattr(
+        desktop, "installed_apps", lambda: (WindowsApp("WhatsApp", "private!App"),)
+    )
+    assert client.get("/v1/desktop/apps").status_code == 403
+    response = client.get("/v1/desktop/apps", headers={"X-Jarvis-Desktop": "1"})
+    assert response.json() == {
+        "apps": ["WhatsApp"],
+        "count": 1,
+        "source": "windows-start-menu",
+    }

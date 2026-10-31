@@ -54,6 +54,9 @@ If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or 
 
 Try:
 
+- “Jarvis, open WhatsApp” or “Jarvis, open Chat G P T.” Installed apps open directly; when an app is absent and a web version is known, Jarvis opens its website and says so.
+- “Open WhatsApp web” or “Open ChatGPT in the browser” explicitly chooses the website. “Open WhatsApp desktop app” explicitly requests the installed app.
+- “What apps can you open?” reads examples from your Windows app list. Store apps and ordinary Start menu applications are discovered automatically; names such as “Chrome,” “VS Code,” and “Microsoft Word” are supported.
 - “Open Gmail” or “Open YouTube.”
 - “Search relaxing music on YouTube” or “Search the web for Chicago weather.”
 - “Open Notepad,” “Open calculator,” “Open Access,” or the name of an installed Start menu app.

@@ -24,6 +24,13 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from openjarvis.server.windows_apps import (
+    activate_app,
+    find_app,
+    installed_apps,
+    name_key,
+)
+
 router = APIRouter(prefix="/v1/desktop", tags=["local-desktop"])
 _worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jarvis-desktop")
 _jobs: dict[str, threading.Event] = {}
@@ -47,6 +54,10 @@ SITES = {
     "chatgpt": "https://chatgpt.com/",
     "amazon": "https://www.amazon.com/",
     "netflix": "https://www.netflix.com/",
+    "spotify": "https://open.spotify.com/",
+    "microsoft teams": "https://teams.microsoft.com/",
+    "claude": "https://claude.ai/",
+    "copilot": "https://copilot.microsoft.com/",
 }
 APPS = {
     "notepad": ["notepad.exe"],
@@ -119,13 +130,23 @@ def _guard(request: Request):
 def _clean(text: str) -> str:
     text = text.strip().rstrip("?.!")
     text = re.sub(r"\s+(?:uh|um)$", "", text, flags=re.I)
-    text = re.sub(
-        "^(?:(?:hey\\s+)?(?:open)?jarvis[, ]+|please\\s+|(?:can|could|would) you\\s+)",
-        "",
-        text,
-        flags=re.I,
-    )
-    return re.sub(r"^please\s+", "", text, flags=re.I).strip()
+    while True:
+        cleaned = re.sub(
+            r"^(?:(?:hey\s+)?(?:open)?jarvis[, ]+|please\s+|"
+            r"(?:can|could|would) you\s+)",
+            "",
+            text,
+            flags=re.I,
+        ).strip()
+        if cleaned == text:
+            # Whisper can join a verb and brand: 'OpenChat, GPT'. Only split
+            # known targets so an unrelated word isn't treated as a command.
+            fused = re.match(r"^(open|launch|start)(.+)$", text, re.I)
+            known = {name_key(name) for name in (*SITES, *APPS)}
+            if fused and name_key(fused.group(2)) in known:
+                return fused.group(1) + " " + fused.group(2)
+            return text
+        text = cleaned
 
 
 def _open_url(url: str) -> None:
@@ -178,6 +199,58 @@ def _launch_app(name: str) -> str:
         f"I could not find an installed app named {name}. "
         "Say its Start menu name or the website address."
     )
+
+
+def _open_target(target: str, cancelled: threading.Event) -> tuple[str, list[str]]:
+    target = (
+        re.sub(r"(?:[, ]+(?:please|for me))+$", "", target, flags=re.I)
+        .strip()
+        .rstrip(".")
+    )
+    target = re.sub(r"^(?:my|the)\s+", "", target, flags=re.I)
+    mode = "auto"
+    # Preserve names like 'Whats App' before interpreting an optional app suffix.
+    if name_key(target) not in {name_key(name) for name in SITES}:
+        browser = re.search(
+            r"\s+(?:website|web(?: version)?|in (?:the |my )?browser)$", target, re.I
+        )
+        application = re.search(
+            r"\s+(?:desktop(?: app)?|app|application)$", target, re.I
+        )
+        if browser:
+            target, mode = target[: browser.start()].strip(), "web"
+        elif application:
+            target, mode = target[: application.start()].strip(), "app"
+    site = next(
+        (url for name, url in SITES.items() if name_key(name) == name_key(target)), None
+    )
+    is_url = bool(
+        re.match(r"^(?:https?://|(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#]|$))", target, re.I)
+    )
+    # Explicit addresses and browser requests never activate a native app.
+    app = find_app(target) if not is_url and mode != "web" else None
+    if cancelled.is_set():
+        return "Stopped.", []
+    if app:
+        activate_app(app)
+        return f"I opened {app.name}.", ["launch_app"]
+    if mode != "app" and (site or is_url):
+        url = site or (
+            target
+            if target.lower().startswith(("http://", "https://"))
+            else "https://" + target
+        )
+        _open_url(url)
+        suffix = (
+            " in your browser"
+            if mode == "auto" and name_key(target) in ("whatsapp", "chatgpt")
+            else ""
+        )
+        return f"I opened {target}{suffix}.", ["open_website"]
+    if mode == "web":
+        raise ValueError("Say a website address, such as example.com.")
+    name = _launch_app(target)
+    return f"I launched {name}.", ["launch_app"]
 
 
 def _json_reply(engine, model: str, system: str, text: str) -> dict:
@@ -451,6 +524,48 @@ def execute(body: Command, engine, model: str, cancelled: threading.Event) -> di
     actions = []
     if cancelled.is_set():
         return {"handled": True, "response": "Stopped."}
+    if lower in (
+        "list apps",
+        "list my apps",
+        "list my applications",
+        "show my apps",
+        "show my applications",
+        "what apps can you open",
+        "which apps can you open",
+    ):
+        apps = installed_apps()
+        if not apps:
+            return {
+                "handled": True,
+                "response": (
+                    "I couldn't read your Windows app list. "
+                    "You can still try an app's Start menu name."
+                ),
+                "actions": [],
+            }
+        favourites = {
+            "whatsapp",
+            "chatgpt",
+            "word",
+            "excel",
+            "googlechrome",
+            "spotify",
+            "calculator",
+            "notepad",
+        }
+        ordered = sorted(
+            apps,
+            key=lambda app: (name_key(app.name) not in favourites, app.name.casefold()),
+        )
+        names = ", ".join(app.name for app in ordered[:12])
+        return {
+            "handled": True,
+            "response": (
+                f"Windows lists {len(apps)} apps, including {names}. "
+                "Say open followed by an app's name."
+            ),
+            "actions": ["list_apps"],
+        }
     email_followup = _email_context(body) and not re.match(
         r"^(?:open|launch|start|search|play|click|select|fill|type|scroll|press)\b",
         lower,
@@ -498,31 +613,7 @@ def execute(body: Command, engine, model: str, cancelled: threading.Event) -> di
         elif match := re.match(
             r"^(?:open|launch|start|go to|visit)\s+(.+)$", text, re.I
         ):
-            target = (
-                re.sub(r"\s+(?:please|for me)$", "", match.group(1), flags=re.I)
-                .strip()
-                .rstrip(".")
-            )
-            target = re.sub(r"^my\s+", "", target, flags=re.I)
-            site = SITES.get(target.lower())
-            if site:
-                _open_url(site)
-                reply = f"I opened {target}."
-                actions = ["open_website"]
-            elif re.match(
-                r"^(?:https?://)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/:?#].*)?$", target, re.I
-            ):
-                _open_url(
-                    target
-                    if target.startswith(("http://", "https://"))
-                    else "https://" + target
-                )
-                reply = f"I opened {target}."
-                actions = ["open_website"]
-            else:
-                name = _launch_app(target)
-                reply = f"I launched {name}."
-                actions = ["launch_app"]
+            reply, actions = _open_target(match.group(1), cancelled)
         elif re.match(
             "^(?:click|select|fill|type|scroll|press|switch|navigate|in "
             "(?:this|the) (?:app|window|page)|on (?:this|the) "
@@ -610,6 +701,13 @@ def browser_voice_lease(body: BrowserVoice, request: Request):
         elif _voice_json(path).get("token") == body.token:
             path.unlink(missing_ok=True)
     return {"active": body.active}
+
+
+@router.get("/apps")
+def apps(request: Request):
+    _guard(request)
+    names = [app.name for app in installed_apps()]
+    return {"apps": names, "count": len(names), "source": "windows-start-menu"}
 
 
 @router.get("/health")
