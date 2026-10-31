@@ -22,7 +22,8 @@ class WakeWordTests(unittest.TestCase):
         dialogue = voice.Dialogue()
         self.assertEqual(dialogue.accept("Jarvis.", 100, woke=True), "")
         self.assertEqual(dialogue.accept("what time is it?", 101), "what time is it?")
-        self.assertIsNone(dialogue.accept("open gmail", 131))
+        self.assertEqual(dialogue.accept("tell me more", 159), "tell me more")
+        self.assertIsNone(dialogue.accept("open gmail", 161))
 
     def test_wake_phrase_and_command_in_same_utterance(self):
         dialogue = voice.Dialogue()
@@ -121,6 +122,22 @@ class AudioTests(unittest.TestCase):
 
 
 class AgentRoutingTests(unittest.TestCase):
+    def test_long_conversations_keep_recent_complete_turns(self):
+        history = [
+            {"role": role, "content": f"{i}: " + "x" * 300}
+            for i in range(16)
+            for role in ("user", "assistant")
+        ]
+        recent = voice.trim_history(history)
+        self.assertLessEqual(len(recent), 20)
+        self.assertLessEqual(sum(len(turn["content"]) for turn in recent), 6000)
+        self.assertEqual(recent[0]["role"], "user")
+        self.assertEqual(recent[-1], history[-1])
+
+    def test_speech_does_not_read_reasoning_or_markdown(self):
+        text = "<think>private reasoning</think>## Hey\n- I\x27m here.\n[Read this](https://example.com)"
+        self.assertEqual(voice.spoken_text(text), "Hey I'm here. Read this")
+
     def agent(self):
         agent = voice.LocalAgent.__new__(voice.LocalAgent)
         agent.http = Mock()

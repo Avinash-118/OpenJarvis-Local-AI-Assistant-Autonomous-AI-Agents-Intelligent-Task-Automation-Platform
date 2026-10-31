@@ -1,4 +1,4 @@
-param([switch]$WithMemory)
+param([switch]$WithMemory, [switch]$WithNaturalVoice)
 $ErrorActionPreference = 'Stop'
 $projectRoot = $PSScriptRoot
 $sourceRoot = Join-Path $projectRoot 'OpenJarvis'
@@ -10,6 +10,10 @@ $existingPython = Join-Path $sourceRoot '.venv\Scripts\python.exe'
 if ((Test-Path -LiteralPath $existingBackground) -and (Test-Path -LiteralPath $existingPython)) {
     & $existingPython (Join-Path $projectRoot 'jarvis_background.py') --stop
     Start-Sleep -Seconds 3
+}
+if ($WithNaturalVoice -and (Test-Path -LiteralPath $existingPython)) {
+    & $existingPython (Join-Path $projectRoot 'OpenJarvis-Local.py') --stop
+    if ($LASTEXITCODE -ne 0) { throw 'Close the running Jarvis server before changing the voice setup.' }
 }
 foreach ($folder in @($runtimeRoot, $toolsRoot, $taskTempRoot)) {
     New-Item -ItemType Directory -Path $folder -Force | Out-Null
@@ -50,7 +54,9 @@ if ($WithMemory -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'native-memo
 } else {
     Push-Location $sourceRoot
     try {
-        Invoke-Checked $uvPath @('sync', '--frozen', '--python', '3.13', '--extra', 'desktop', '--extra', 'local-control', '--no-dev')
+        $syncArguments = @('sync', '--frozen', '--python', '3.13', '--extra', 'desktop', '--extra', 'local-control', '--no-dev')
+        if ((Test-Path -LiteralPath $existingBackground) -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'natural-voice-enabled.json'))) { $syncArguments += '--inexact' }
+        Invoke-Checked $uvPath $syncArguments
     } finally { Pop-Location }
 }
 
@@ -69,6 +75,9 @@ try {
     Invoke-Checked 'npx.cmd' @('--yes', 'npm@11.19.0', 'ci', '--no-audit', '--no-fund')
     Invoke-Checked 'npm.cmd' @('run', 'build')
 } finally { Pop-Location }
+if ($WithNaturalVoice -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'natural-voice-enabled.json'))) {
+    & (Join-Path $projectRoot 'Enable-NaturalVoice.ps1') -NoRestart
+}
 if (Test-Path -LiteralPath (Join-Path $runtimeRoot 'background-voice-enabled.json')) {
     & (Join-Path $projectRoot 'Enable-BackgroundVoice.ps1') -NoStart
 }

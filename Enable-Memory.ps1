@@ -44,7 +44,9 @@ if (-not (Test-Path -LiteralPath $rustupPath)) {
 }
 Push-Location $sourceRoot
 try {
-    Invoke-Checked $uvPath @('sync', '--frozen', '--python', '3.13', '--extra', 'desktop', '--extra', 'local-control', '--group', 'desktop-native', '--no-dev')
+    $syncArguments = @('sync', '--frozen', '--python', '3.13', '--extra', 'desktop', '--extra', 'local-control', '--group', 'desktop-native', '--no-dev')
+    if ((Test-Path -LiteralPath (Join-Path $runtimeRoot 'background-voice-enabled.json')) -or (Test-Path -LiteralPath (Join-Path $runtimeRoot 'natural-voice-enabled.json'))) { $syncArguments += '--inexact' }
+    Invoke-Checked $uvPath $syncArguments
     Invoke-Checked $pythonPath @('-c', 'from openjarvis._rust_bridge import RUST_AVAILABLE; assert RUST_AVAILABLE; print("Native memory extension is ready.")')
 } finally { Pop-Location }
 Set-Content -LiteralPath (Join-Path $runtimeRoot 'native-memory-enabled') -Value 'enabled' -Encoding ascii

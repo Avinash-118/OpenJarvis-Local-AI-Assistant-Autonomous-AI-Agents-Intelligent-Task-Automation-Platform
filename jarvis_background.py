@@ -30,6 +30,7 @@ MODEL = STATE / "wake-word" / "vosk-model-small-en-us-0.15"
 URL = "http://127.0.0.1:8766"
 RATE = 16000
 BLOCK = 1280  # 80 ms of mono signed 16-bit PCM.
+FOLLOW_UP_SECONDS = 60
 PAUSED = STATE / "voice-paused"
 STOP = STATE / "voice-stop"
 LEASE = STATE / "browser-voice.json"
@@ -165,12 +166,37 @@ class Dialogue:
         text = text.strip()
         match = WAKE.match(text)
         if match:
-            self.until = now + 30
+            self.until = now + FOLLOW_UP_SECONDS
             return text[match.end() :].strip()
         if woke or now >= self.until:
             # A wake detector false positive must not execute background speech.
             return None
         return text
+
+
+def trim_history(
+    history: list[dict[str, str]], *, budget: int = 6000
+) -> list[dict[str, str]]:
+    """Keep complete recent turns within this laptop's small context window."""
+    recent = list(history)
+    while recent and (
+        len(recent) > 20 or sum(len(turn["content"]) for turn in recent) > budget
+    ):
+        del recent[:2]
+    return recent
+
+
+def spoken_text(text: str) -> str:
+    """Keep internal markup and visual formatting out of spoken conversation."""
+    text = re.sub(r"<think>.*?</think>\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"```.*?```", "That answer includes code.", text, flags=re.DOTALL)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(
+        r"^\s*(?:#{1,6}\s+|[-*•]\s+|\d+[.)]\s+)", "", text, flags=re.MULTILINE
+    )
+    text = re.sub(r"[*_`]", "", text)
+    return re.sub(r"\s+", " ", text).strip()[:2500]
 
 
 class LocalAgent:
@@ -209,12 +235,12 @@ class LocalAgent:
         return response.json().get("text", "").strip()
 
     def answer(self, text: str) -> str:
-        history = self.history[-10:]
+        history = trim_history(self.history, budget=max(0, 6000 - len(text)))
         self.job = "background-" + uuid.uuid4().hex
         try:
             response = self.http.post(
                 "/v1/desktop/command",
-                json={"id": self.job, "text": text, "messages": history},
+                json={"id": self.job, "text": text, "messages": history[-12:]},
             )
             response.raise_for_status()
             result = response.json()
@@ -238,22 +264,19 @@ class LocalAgent:
                     response.json()["choices"][0]["message"]["content"]
                     or "I did not get an answer. Please try again."
                 )
-            self.history = (
+            self.history = trim_history(
                 history
                 + [
                     {"role": "user", "content": text},
                     {"role": "assistant", "content": reply},
                 ]
-            )[-10:]
+            )
             return reply
         finally:
             self.job = None
 
     def speech(self, text: str) -> bytes:
-        # Keep URLs and formatting out of speech, while retaining readable text.
-        text = re.sub(r"```.*?```", "That answer includes code.", text, flags=re.DOTALL)
-        text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
-        text = re.sub(r"[*_#`]", "", text).strip()[:2500]
+        text = spoken_text(text)
         response = self.http.post("/v1/speech/synthesize", json={"text": text})
         response.raise_for_status()
         return response.content
@@ -479,7 +502,7 @@ class BackgroundVoice:
                 if command is None:
                     continue
                 if not command:
-                    reply = "Yes? I'm listening."
+                    reply = "I'm here. What's up?"
                 elif SLEEP.fullmatch(command):
                     self.dialogue.until = 0
                     self.agent.history.clear()
@@ -490,7 +513,7 @@ class BackgroundVoice:
                     reply = self.agent.answer(command)
                 if self.allowed():
                     self.speak(reply)
-                    self.dialogue.until = time.monotonic() + 30
+                    self.dialogue.until = time.monotonic() + FOLLOW_UP_SECONDS
             except Exception as exc:
                 log.exception("Background voice turn failed")
                 self.set_phase("error", str(exc))

@@ -867,7 +867,7 @@ export function SettingsPage() {
                 />
                 <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
                   {ttsBackend === null ? 'Checking...'
-                    : ttsBackend.available ? `${ttsBackend.backend === 'windows' ? 'Windows (local)' : ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id}` : ''}`
+                    : ttsBackend.available ? `${ttsBackend.backend === 'windows' ? 'Windows (local)' : ttsBackend.backend === 'piper' ? 'Neural (local)' : ttsBackend.backend}${ttsBackend.voice_id ? ` / ${ttsBackend.voice_id === 'en_US-lessac-medium' ? 'Natural English' : ttsBackend.voice_id}` : ''}`
                     : 'Not configured'}
                 </span>
               </div>
@@ -877,7 +877,7 @@ export function SettingsPage() {
                 onClick={() => {
                   const tts = useTtsStore.getState();
                   if (voiceTestBusy) tts.stop();
-                  else void tts.speak('settings-voice-test', 'Hello! Jarvis is ready. I can speak to you using this local Windows voice.');
+                  else void tts.speak('settings-voice-test', "Hey, I'm here. Tell me what's on your mind.");
                 }}
                 className="px-3 py-2 rounded-lg text-xs cursor-pointer disabled:opacity-40"
                 style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>

@@ -1,0 +1,3 @@
+# Optional offline neural speech. Base desktop dependencies supply NumPy.
+piper-tts==1.8.0
+onnxruntime==1.24.2

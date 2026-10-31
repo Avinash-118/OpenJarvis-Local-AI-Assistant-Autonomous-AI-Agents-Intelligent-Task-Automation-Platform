@@ -12,6 +12,7 @@ for _mod in ("faster_whisper", "openai_whisper", "deepgram"):
 # Optional TTS backends — each registers itself via @TTSRegistry.register()
 for _mod in (
     "windows_tts",
+    "piper_tts",
     "cartesia_tts",
     "elevenlabs_tts",
     "kokoro_tts",

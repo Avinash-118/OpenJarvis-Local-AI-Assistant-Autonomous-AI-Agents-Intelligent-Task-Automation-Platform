@@ -26,11 +26,19 @@ The setup script installs a separate Python 3.13 environment, downloads the free
 
 ## Hands-free voice and computer commands
 
+### Natural conversation and voice
+
+Run **Enable-NaturalVoice.ps1** to use a free offline neural voice and a conversational reply style. It verifies and downloads the pinned English voice model, keeps a backup of the previous configuration, and restarts Jarvis. **Settings → Speech → Voice** then shows **Neural (local) / Natural English**. Click **Test voice** to hear it.
+
+Jarvis uses shorter, plain-spoken answers, contractions, and recent conversation context. It avoids repeated introductions and stock responses. Follow-up listening lasts 60 seconds after a reply, and the last ten turns are retained within a bounded context window. It remains an AI assistant and does not claim human experiences or completed actions it did not perform.
+
+For a fresh clone, run **Setup-OpenJarvis.ps1 -WithNaturalVoice**. Later setup and memory-install runs preserve the optional voice dependencies. The voice uses [Piper](https://github.com/OHF-Voice/piper1-gpl), an optional GPL-3.0 dependency installed from PyPI, and the upstream [Lessac English voice](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium). Model weights are kept locally and excluded from Git.
+
 ### Start with Windows and wake by voice
 
 Run **Enable-BackgroundVoice.ps1** once. It installs the pinned free voice dependencies, downloads a checksum-pinned [Vosk English model](https://alphacephei.com/vosk/models), adds a shortcut to your Windows user Startup folder, and starts a visible Jarvis tray icon. No administrator account or paid API is required. Repeat setup runs preserve this feature.
 
-After signing in, wait for the spoken ready message. Say **“Jarvis”**, wait for **“Yes? I'm listening,”** then ask your question or give a computer command. You can also say **“Jarvis, open YouTube”** in one sentence. Jarvis speaks the answer, then accepts follow-up requests for 30 seconds before returning to wake-word mode. Say **“stop listening”** to end that conversation and return to waiting for “Jarvis.”
+After signing in, wait for the spoken ready message. Say **“Jarvis”**, wait for its acknowledgment, then ask your question or give a computer command. You can also say **“Jarvis, open YouTube”** in one sentence. Jarvis speaks the answer, then accepts follow-up requests for 60 seconds before returning to wake-word mode. Say **“stop listening”** to end that conversation and return to waiting for “Jarvis.”
 
 The listener works with the browser closed. **Settings → Speech → Wake word: Jarvis** shows its live status and a **Pause microphone** button. The tray icon also offers **Pause microphone**, **Open Jarvis**, and **Quit background voice**. Pausing closes microphone capture; resume using the tray or Settings. Browser voice mode temporarily takes over from the background listener so one request is not handled twice.
 
@@ -40,9 +48,9 @@ It runs while you are signed in and Windows is unlocked. It pauses on the lock s
 
 ### Browser voice mode
 
-In **Settings → Speech**, **Voice** should show **Windows (local)** and an installed voice such as Microsoft David. Click **Test voice** to check playback, then **Start voice mode** to open Chat and begin listening. Read-aloud buttons and automatic spoken replies use the same backend.
+In **Settings → Speech**, **Voice** shows the active speech backend. With natural voice enabled it shows **Neural (local)**; the basic installation uses **Windows (local)** and an installed voice such as Microsoft David. Click **Test voice** to check playback, then **Start voice mode** to open Chat and begin listening. Read-aloud buttons and automatic spoken replies use the same backend.
 
-If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Speak normally, then pause for about 1.2 seconds. Jarvis transcribes locally, runs your command or answers your question, speaks using an installed Windows voice, and starts listening again. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. This browser mode requires the initial click after opening the app; the separately enabled Windows companion provides automatic wake-word listening.
+If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Speak normally, then pause for about 1.2 seconds. Jarvis transcribes locally, runs your command or answers your question, speaks using the active local voice, and starts listening again. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. This browser mode requires the initial click after opening the app; the separately enabled Windows companion provides automatic wake-word listening.
 
 Try:
 
@@ -78,6 +86,8 @@ This installs the pinned Rust 1.89 toolchain inside `.tools`, checks the officia
 - `Enable-BackgroundVoice.ps1` / `Disable-BackgroundVoice.ps1`: enable or remove automatic voice startup for the current Windows user.
 - `jarvis_background.py`: local wake-word listener, tray controls, and backend recovery.
 - `requirements-background.txt`: pinned optional background voice libraries.
+- `Enable-NaturalVoice.ps1` / `natural_voice_setup.py`: verified offline voice installation and conversational style configuration.
+- `requirements-natural-voice.txt`: pinned optional neural speech dependencies.
 - `config/config.local.example.toml`: shareable configuration template.
 - `.openjarvis-runtime/`: personal configuration, databases, downloaded speech models and logs. Kept locally and excluded from Git.
 - `.upstream-git/`: original upstream Git history retained locally after the move; excluded from this repository.
