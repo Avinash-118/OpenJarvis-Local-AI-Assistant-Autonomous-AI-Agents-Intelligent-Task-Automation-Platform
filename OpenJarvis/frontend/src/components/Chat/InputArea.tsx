@@ -14,6 +14,7 @@ import { runDesktopCommand } from '../../lib/desktop-command';
 import { useVoiceSession } from '../../lib/voice-session';
 import { useHandsFree } from '../../hooks/useHandsFree';
 import { MicButton } from './MicButton';
+import { BackgroundVoiceStatus } from '../BackgroundVoiceStatus';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
   ChatMessage,
@@ -583,6 +584,7 @@ export function InputArea() {
 
   return (
     <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+      <BackgroundVoiceStatus compact />
       <div className="mb-2 flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <button
@@ -606,8 +608,8 @@ export function InputArea() {
             disabled={!voice.active && (!speechAvailable || modelLoading || !selectedModel || streamState.isStreaming || speechState !== 'idle')}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs cursor-pointer disabled:opacity-40"
             style={{ background: voice.active ? 'var(--color-accent-subtle)' : 'var(--color-bg-tertiary)', border: '1px solid var(--color-border)', color: voice.active ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}
-            title="Listen continuously, send after a pause, and reply using a local Windows voice">
-            <Headphones size={14} />{voice.active ? 'Stop voice' : 'Start voice mode'}
+            title="Optional browser microphone mode. Always-on Jarvis works without clicking this.">
+            <Headphones size={14} />{voice.active ? 'Stop browser voice' : 'Browser voice (optional)'}
           </button>
         </div>
         {deepResearch && corpusSync.syncing && corpusSync.itemsSynced > 0 && (

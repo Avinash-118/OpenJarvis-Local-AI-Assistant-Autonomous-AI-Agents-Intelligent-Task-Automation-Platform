@@ -31,15 +31,18 @@ URL = "http://127.0.0.1:8766"
 RATE = 16000
 BLOCK = 1280  # 80 ms of mono signed 16-bit PCM.
 FOLLOW_UP_SECONDS = 60
+WAKE_REPLY = "I'm here. What's up?"
 PAUSED = STATE / "voice-paused"
 STOP = STATE / "voice-stop"
 LEASE = STATE / "browser-voice.json"
 STATUS = STATE / "background-voice.json"
 WAKE = re.compile(
-    r"^(?:(?:hey|okay|ok)\s+)?(?:jarvis|jervis)\b[,.:!?\s]*", re.IGNORECASE
+    r"^(?:(?:hey|hello|hi|okay|ok)[,\s]*)?(?:jarvis|jervis)\b[,.:!?\s]*",
+    re.IGNORECASE,
 )
 SLEEP = re.compile(
-    r"^(?:please\s+)?(?:stop listening|go to sleep|stop voice(?: mode)?|that is all|that\x27s all)[.!]?$",
+    r"^(?:please\s+)?(?:stop listening|go to sleep|stop voice(?: mode)?|"
+    r"that is all|that\x27s all)[.!]?$",
     re.IGNORECASE,
 )
 log = logging.getLogger("jarvis.background")
@@ -151,7 +154,7 @@ class TurnBoundary:
                     self.voiced = 0
         return (
             self.elapsed >= 30
-            or (self.started and self.silence >= 1.2)
+            or (self.started and self.silence >= 0.9)
             or (not self.started and self.elapsed >= 6)
         )
 
@@ -172,6 +175,23 @@ class Dialogue:
             # A wake detector false positive must not execute background speech.
             return None
         return text
+
+
+def fast_greeting(parts: list[dict]) -> str | None:
+    """Only an independently recognized, confident wake greeting may skip Whisper.
+
+    This fast path never executes a computer command or drops unknown words.
+    """
+    text = " ".join(str(part.get("text", "")).strip() for part in parts).strip()
+    words = [word for part in parts for word in part.get("result", [])]
+    if (
+        WAKE.fullmatch(text)
+        and words
+        and len(words) == len(text.split())
+        and all(float(word.get("conf", 0)) >= 0.8 for word in words)
+    ):
+        return text
+    return None
 
 
 def trim_history(
@@ -209,6 +229,25 @@ class LocalAgent:
         )
         self.history: list[dict[str, str]] = []
         self.job: str | None = None
+        self._speech_cache: dict[str, bytes] = {}
+
+    def warm(self):
+        """Prepare the wake response and chat model without blocking capture."""
+        self.speech(WAKE_REPLY)
+        models = self.http.get("/v1/models")
+        models.raise_for_status()
+        model = models.json()["data"][0]["id"]
+        response = self.http.post(
+            "/v1/chat/completions",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": "Hi"}],
+                "max_tokens": 1,
+                "stream": False,
+            },
+            timeout=90,
+        )
+        response.raise_for_status()
 
     def healthy(self) -> bool:
         try:
@@ -277,8 +316,12 @@ class LocalAgent:
 
     def speech(self, text: str) -> bytes:
         text = spoken_text(text)
+        if text in self._speech_cache:
+            return self._speech_cache[text]
         response = self.http.post("/v1/speech/synthesize", json={"text": text})
         response.raise_for_status()
+        if text == WAKE_REPLY:
+            self._speech_cache[text] = response.content
         return response.content
 
 
@@ -293,6 +336,9 @@ class BackgroundVoice:
         self.icon = None
         self.lock = threading.Lock()
         self.noise_floor = 0.001
+        self.fast_text: str | None = None
+        self.heard = ""
+        self.response = ""
 
     def set_phase(self, phase: str, error: str | None = None):
         with self.lock:
@@ -340,6 +386,8 @@ class BackgroundVoice:
                     "wake_word": "Jarvis",
                     "updated_at": time.time(),
                     "paused": PAUSED.exists(),
+                    "heard": self.heard[:240],
+                    "response": self.response[:300],
                 }
             try:
                 temporary = STATUS.with_suffix(".tmp")
@@ -350,11 +398,22 @@ class BackgroundVoice:
             self.stop.wait(2)
 
     def supervise_backend(self):
+        warmed = False
         while not self.stop.is_set():
             if self.agent.healthy():
                 self.ready.set()
+                if not warmed:
+                    warmed = True
+                    try:
+                        self.agent.warm()
+                    except Exception:
+                        log.warning(
+                            "Chat warm-up failed; voice commands remain available",
+                            exc_info=True,
+                        )
                 self.stop.wait(15)
                 continue
+            warmed = False
             self.ready.clear()
             self.set_phase("starting")
             try:
@@ -410,13 +469,25 @@ class BackgroundVoice:
                     output.write(chunk)
         self.stop.wait(0.35)  # Let speaker echo fade before reopening the mic.
 
-    def record(self, stream, seed: list[bytes] | None = None) -> bytes | None:
+    def record(
+        self, stream, seed: list[bytes] | None = None, greeting_detector=None
+    ) -> bytes | None:
         import numpy as np
 
         self.set_phase("listening")
         frames = list(seed or [])
+        self.fast_text = None
+        parts = []
+        if greeting_detector:
+            greeting_detector.Reset()
+
+        def observe(frame):
+            if greeting_detector and greeting_detector.AcceptWaveform(frame):
+                parts.append(json.loads(greeting_detector.Result()))
+
         boundary = TurnBoundary(self.noise_floor)
         for frame in frames:
+            observe(frame)
             samples = np.frombuffer(frame, dtype="<i2").astype(np.float32) / 32768
             boundary.update(float(np.sqrt(np.mean(samples * samples))))
         # The seed can include pre-wake silence; never end before new audio.
@@ -427,19 +498,23 @@ class BackgroundVoice:
             data, _overflow = stream.read(BLOCK)
             frame = bytes(data)
             frames.append(frame)
+            observe(frame)
             samples = np.frombuffer(frame, dtype="<i2").astype(np.float32) / 32768
             if boundary.update(float(np.sqrt(np.mean(samples * samples)))):
+                if greeting_detector:
+                    parts.append(json.loads(greeting_detector.FinalResult()))
+                    self.fast_text = fast_greeting(parts)
                 return wav_bytes(frames) if boundary.started else None
         return None
 
-    def capture(self, detector, *, wake: bool) -> bytes | None:
+    def capture(self, detector, *, wake: bool, greeting_detector=None) -> bytes | None:
         import sounddevice as sd
 
         with sd.RawInputStream(
             samplerate=RATE, channels=1, dtype="int16", blocksize=BLOCK
         ) as stream:
             if not wake:
-                return self.record(stream)
+                return self.record(stream, greeting_detector=greeting_detector)
             self.set_phase("wake-word")
             detector.Reset()
             pre_roll: deque[bytes] = deque(maxlen=50)
@@ -457,7 +532,7 @@ class BackgroundVoice:
                     seed, self.noise_floor = wake_seed(
                         list(pre_roll), seen * BLOCK / RATE, result, final=bool(final)
                     )
-                    return self.record(stream, seed)
+                    return self.record(stream, seed, greeting_detector)
         return None
 
     def listen(self):
@@ -469,10 +544,23 @@ class BackgroundVoice:
             if model.vosk_model_find_word("jarvis") < 0:
                 raise RuntimeError("The wake-word model does not contain Jarvis")
             detector = KaldiRecognizer(
-                model, RATE, json.dumps(["jarvis", "hey jarvis", "[unk]"])
+                model,
+                RATE,
+                json.dumps(
+                    [
+                        "jarvis",
+                        "hey jarvis",
+                        "hello jarvis",
+                        "hi jarvis",
+                        "okay jarvis",
+                        "[unk]",
+                    ]
+                ),
             )
             detector.SetWords(True)
             detector.SetPartialWords(True)
+            greeting_detector = KaldiRecognizer(model, RATE)
+            greeting_detector.SetWords(True)
         except Exception as exc:
             log.exception("Wake-word model initialization failed")
             self.set_phase("error", str(exc))
@@ -491,18 +579,22 @@ class BackgroundVoice:
                     self.speak("Jarvis is ready. Say Jarvis when you need me.")
                     greeted = True
                 woke = time.monotonic() >= self.dialogue.until
-                audio = self.capture(detector, wake=woke)
+                audio = self.capture(
+                    detector, wake=woke, greeting_detector=greeting_detector
+                )
                 if audio is None or not self.allowed():
                     continue
                 self.set_phase("transcribing")
-                text = self.agent.transcribe(audio)
+                text = self.fast_text or self.agent.transcribe(audio)
+                with self.lock:
+                    self.heard, self.response = text, ""
                 if not self.allowed():
                     continue
                 command = self.dialogue.accept(text, time.monotonic(), woke=woke)
                 if command is None:
                     continue
                 if not command:
-                    reply = "I'm here. What's up?"
+                    reply = WAKE_REPLY
                 elif SLEEP.fullmatch(command):
                     self.dialogue.until = 0
                     self.agent.history.clear()
@@ -512,6 +604,8 @@ class BackgroundVoice:
                     self.set_phase("working")
                     reply = self.agent.answer(command)
                 if self.allowed():
+                    with self.lock:
+                        self.response = reply
                     self.speak(reply)
                     self.dialogue.until = time.monotonic() + FOLLOW_UP_SECONDS
             except Exception as exc:

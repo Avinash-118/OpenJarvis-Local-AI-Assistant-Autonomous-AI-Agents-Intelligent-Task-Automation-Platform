@@ -3,7 +3,6 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from openjarvis.core.registry import SpeechRegistry
 from openjarvis.speech.faster_whisper import FasterWhisperBackend
 
@@ -138,7 +137,23 @@ def test_faster_whisper_falls_back_from_unsupported_float16():
         )
         assert backend._ensure_model() is mock_model
 
-    mock_whisper.assert_called_once_with("base", device="cpu", compute_type="int8")
+    mock_whisper.assert_called_once_with(
+        "base", device="cpu", compute_type="int8", cpu_threads=2
+    )
+
+
+@pytest.mark.parametrize("language", ["en", "es"])
+def test_fast_decode_and_english_app_name_hints(language):
+    model = MagicMock()
+    model.transcribe.return_value = ([], MagicMock(duration=0))
+    with patch("openjarvis.speech.faster_whisper.WhisperModel", return_value=model):
+        FasterWhisperBackend(device="cpu").transcribe(b"audio", language=language)
+    kwargs = model.transcribe.call_args.kwargs
+    assert kwargs["beam_size"] == 1 and kwargs["best_of"] == 1
+    assert kwargs["condition_on_previous_text"] is False
+    assert ("initial_prompt" in kwargs) == (language == "en")
+    if language == "en":
+        assert "ChatGPT" in kwargs["initial_prompt"]
 
 
 def test_faster_whisper_missing_dependency_hint_uses_desktop_extra():

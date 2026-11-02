@@ -33,6 +33,7 @@ def local_environment():
         'OPENJARVIS_DESKTOP_CONTROL': '1',
         'OPENJARVIS_DISCOVER_ENGINES': '0',
         'JARVIS_NUM_CTX': '4096',
+        'JARVIS_KEEP_ALIVE': '30m',
         'PYTHONUTF8': '1',
         'PYTHONIOENCODING': 'utf-8',
         'NIM_HOST': 'http://127.0.0.1:9',
@@ -88,6 +89,38 @@ def ensure_ollama(env):
     raise SystemExit(f'Ollama did not become ready. Check {log_path}')
 
 
+def ensure_background_voice(env):
+    """Restore enabled voice when opening Jarvis, independently of this launcher."""
+    script = ROOT / 'jarvis_background.py'
+    pythonw = PYTHON.with_name('pythonw.exe')
+    if not (STATE / 'background-voice-enabled.json').is_file() or not pythonw.is_file() or not script.is_file():
+        return
+    try:
+        import psutil
+        state = json.loads((STATE / 'background-voice.json').read_text('utf-8'))
+        process = psutil.Process(int(state['pid']))
+        arguments = [str(Path(arg).resolve()).casefold()
+                     for arg in process.cmdline()[1:] if arg.endswith('.py')]
+        if time.time() - float(state['updated_at']) < 15 and str(script).casefold() in arguments:
+            return
+    except (OSError, ValueError, KeyError, psutil.Error):
+        pass
+    try:
+        # The Windows shell owns this process, so closing the launcher or its
+        # terminal does not take the always-on listener down with it.
+        import pythoncom
+        from win32com.client import Dispatch
+        pythoncom.CoInitialize()
+        try:
+            Dispatch('Shell.Application').ShellExecute(
+                str(pythonw), '"' + str(script) + '"', str(ROOT), 'open', 0)
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        subprocess.Popen([str(pythonw), str(script)], cwd=ROOT, env=env,
+                         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Start or stop the local OpenJarvis installation.')
     parser.add_argument('--stop', action='store_true')
@@ -127,6 +160,7 @@ def main():
         if not healthy():
             raise SystemExit(f'OpenJarvis did not become ready. Check {STATE / "server.log"}')
     print(f'OpenJarvis is ready: {URL}')
+    ensure_background_voice(env)
     if not args.no_browser:
         webbrowser.open(URL)
     return 0

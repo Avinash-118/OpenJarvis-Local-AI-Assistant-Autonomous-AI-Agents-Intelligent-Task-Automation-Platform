@@ -24,6 +24,14 @@ _cache: tuple[WindowsApp, ...] = ()
 _cache_time: float | None = None
 _cache_lock = threading.Lock()
 _ALIASES = {
+    "linkdien": "linkedin",
+    # Common local speech-recognition spellings; keep these explicit so an
+    # unrelated app name is never guessed or redirected to ChatGPT.
+    "chagypity": "chatgpt",
+    "chatgbt": "chatgpt",
+    "chatgdp": "chatgpt",
+    "chatgpd": "chatgpt",
+    "chatjpt": "chatgpt",
     "chrome": "googlechrome",
     "edge": "microsoftedge",
     "teams": "microsoftteams",
@@ -36,6 +44,7 @@ _ALIASES = {
     "microsoftpowerpoint": "powerpoint",
     "microsoftaccess": "access",
     "windowsexplorer": "fileexplorer",
+    "windowssettings": "settings",
 }
 
 

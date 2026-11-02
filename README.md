@@ -40,7 +40,7 @@ Run **Enable-BackgroundVoice.ps1** once. It installs the pinned free voice depen
 
 After signing in, wait for the spoken ready message. Say **“Jarvis”**, wait for its acknowledgment, then ask your question or give a computer command. You can also say **“Jarvis, open YouTube”** in one sentence. Jarvis speaks the answer, then accepts follow-up requests for 60 seconds before returning to wake-word mode. Say **“stop listening”** to end that conversation and return to waiting for “Jarvis.”
 
-The listener works with the browser closed. **Settings → Speech → Wake word: Jarvis** shows its live status and a **Pause microphone** button. The tray icon also offers **Pause microphone**, **Open Jarvis**, and **Quit background voice**. Pausing closes microphone capture; resume using the tray or Settings. Browser voice mode temporarily takes over from the background listener so one request is not handled twice.
+The listener works with the browser closed. **Settings → Speech → Always-on voice** shows its live status and a **Pause microphone** button. The tray icon also offers **Pause microphone**, **Open Jarvis**, and **Quit background voice**. Pausing closes microphone capture; resume using the tray or Settings. Browser voice mode temporarily takes over from the background listener so one request is not handled twice.
 
 It runs while you are signed in and Windows is unlocked. It pauses on the lock screen and resumes after unlock or sleep recovery. A sleeping or powered-off laptop cannot hear the wake word. Wake detection, transcription, reasoning, and voice output run locally. The companion does not save microphone recordings; chat requests use the server's existing local history and trace settings.
 
@@ -54,6 +54,9 @@ If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or 
 
 Try:
 
+- Say **“Hello Jarvis”** without clicking a microphone, wait for the spoken acknowledgment, then say **“Open ChatGPT.”** The **Always-on voice** panel on Chat shows readiness, the latest recognized words, and the reply. Browser microphone mode is optional.
+- Wake greetings are recognized locally while recording and use a cached spoken acknowledgment. English dictation uses a faster decode with app-name hints. The chat model warms in the background and stays loaded for 30 minutes after use to reduce repeated cold starts; longer answers can still take several seconds on a CPU.
+- “Navigate to ChatGPT web page” and “Open Google and type ChatGPT” open the known website directly. Common speech spellings of ChatGPT are normalized without guessing unrelated app names.
 - “Jarvis, open WhatsApp” or “Jarvis, open Chat G P T.” Installed apps open directly; when an app is absent and a web version is known, Jarvis opens its website and says so.
 - “Open WhatsApp web” or “Open ChatGPT in the browser” explicitly chooses the website. “Open WhatsApp desktop app” explicitly requests the installed app.
 - “What apps can you open?” reads examples from your Windows app list. Store apps and ordinary Start menu applications are discovered automatically; names such as “Chrome,” “VS Code,” and “Microsoft Word” are supported.
@@ -106,3 +109,17 @@ The model-list endpoint returns the configured server model first. This prevents
 This project packages and customizes OpenJarvis; it does not claim authorship of the upstream framework. Upstream source was cloned from **open-jarvis/OpenJarvis**, commit **05839014**, with installed version **1.0.5.dev156+g05839014**. OpenJarvis is distributed under the Apache License 2.0. Its original README, license and copyright notices are retained under `OpenJarvis/`; the license is also provided at the project root.
 
 Updates should be reviewed against upstream before replacing the vendored source so the local model-selection fix is preserved.
+
+## WhatsApp and LinkedIn voice workflows
+
+Jarvis uses your current Windows account and your normal signed-in app sessions. Supported commands include:
+
+- “Can you access WhatsApp?” — describes the available app controls directly.
+- “Open WhatsApp” or “Open LinkedIn.” Installed apps are preferred; known websites are available as a fallback.
+- “Find Alice on WhatsApp” or “Find Alice on LinkedIn.” WhatsApp uses its named chat-search field; LinkedIn opens its messaging view and searches there.
+- “Prepare a WhatsApp message for Alice saying I will be there at six!” — keeps the exact text as a draft and opens chat search.
+- “Write a LinkedIn message to Alice about asking for more details of the role.” — prepares a short draft using the local model.
+- After selecting the intended conversation: “Put the draft in this chat.” This fills one verified message box without submitting it. You can select a visible conversation by voice using “Click Alice” or “Select Alice.”
+- “Replace current draft” explicitly replaces existing message-box text. “Cancel draft” clears Jarvis's in-memory copy.
+
+Drafts stay in memory for five minutes. Preparing one does not fill a message box until you ask. The app and current window are checked before entry; existing draft text is preserved unless replacement is requested. If a search or composer is unavailable, Jarvis reports the missing control. Sign in in the app when needed, and review the recipient and message before sending. Other installed apps can be opened by their Start menu name and operated through available visible controls.

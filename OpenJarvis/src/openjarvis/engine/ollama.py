@@ -103,6 +103,12 @@ def _ollama_request_options(
     return options
 
 
+def _apply_keep_alive(payload: dict, kwargs: dict) -> None:
+    keep_alive = kwargs.get("keep_alive", os.environ.get("JARVIS_KEEP_ALIVE"))
+    if keep_alive is not None:
+        payload["keep_alive"] = keep_alive
+
+
 @EngineRegistry.register("ollama")
 class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
     """Ollama backend via its native HTTP API."""
@@ -168,6 +174,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
                 kwargs=kwargs,
             ),
         }
+        _apply_keep_alive(payload, kwargs)
         # Disable extended thinking by default (Qwen3.5 etc.).
         # When enabled, thinking tokens consume the entire budget and
         # the visible content comes back empty.
@@ -290,6 +297,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
                 kwargs=kwargs,
             ),
         }
+        _apply_keep_alive(payload, kwargs)
         # Mirror generate()'s default: disable extended thinking unless the
         # caller opted in. Qwen3/etc. with thinking on can stall the visible
         # stream for 60+ seconds before any tokens reach the client, which
@@ -394,6 +402,7 @@ class OllamaEngine(AsyncHTTPEngineMixin, InferenceEngine):
         elif kwargs["think"] is not None:
             payload["think"] = kwargs["think"]
 
+        _apply_keep_alive(payload, kwargs)
         tools = kwargs.get("tools")
         if tools:
             payload["tools"] = tools

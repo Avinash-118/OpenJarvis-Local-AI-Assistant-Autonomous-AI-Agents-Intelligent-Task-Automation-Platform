@@ -49,6 +49,34 @@ class WakeWordTests(unittest.TestCase):
         self.assertIsNotNone(voice.SLEEP.fullmatch("Go to sleep."))
         self.assertIsNone(voice.SLEEP.fullmatch("explain how computers go to sleep"))
 
+    def test_hello_hi_and_punctuated_wake_phrases(self):
+        for phrase in ["Hello Jarvis!", "Hello, Jarvis.", "Hi Jervis", "HelloJarvis"]:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(voice.Dialogue().accept(phrase, 100, woke=True), "")
+        self.assertEqual(
+            voice.Dialogue().accept("Hello Jarvis, open ChatGPT", 100, woke=True),
+            "open ChatGPT",
+        )
+
+    def test_fast_greeting_never_discards_a_command_or_uncertain_word(self):
+        def part(text, confidence=1):
+            return {
+                "text": text,
+                "result": [{"word": w, "conf": confidence} for w in text.split()],
+            }
+
+        self.assertEqual(voice.fast_greeting([part("hello jarvis")]), "hello jarvis")
+        self.assertEqual(
+            voice.fast_greeting([part("hello"), part("jarvis")]), "hello jarvis"
+        )
+        for item in [
+            part("hello jarvis", 0.5),
+            part("jarvis open chat gpt"),
+            part("hello service"),
+            {"text": "hello jarvis"},
+        ]:
+            self.assertIsNone(voice.fast_greeting([item]))
+
 
 class AudioTests(unittest.TestCase):
     def test_pre_wake_background_speech_is_trimmed_by_word_timestamp(self):
@@ -143,7 +171,15 @@ class AgentRoutingTests(unittest.TestCase):
         agent.http = Mock()
         agent.history = []
         agent.job = None
+        agent._speech_cache = {}
         return agent
+
+    def test_wake_reply_reuses_audio_without_another_tts_request(self):
+        agent = self.agent()
+        agent.http.post.return_value.content = b"RIFFaudio"
+        self.assertEqual(agent.speech(voice.WAKE_REPLY), b"RIFFaudio")
+        self.assertEqual(agent.speech(voice.WAKE_REPLY), b"RIFFaudio")
+        self.assertEqual(agent.http.post.call_count, 1)
 
     def test_desktop_command_uses_existing_executor_without_extra_model_call(self):
         agent = self.agent()
@@ -185,6 +221,46 @@ class AgentRoutingTests(unittest.TestCase):
 
 
 class MicrophoneControlTests(unittest.TestCase):
+    def test_fast_wake_response_needs_neither_whisper_nor_chat_model(self):
+        import types
+
+        listener = voice.BackgroundVoice()
+        listener.agent = Mock()
+        listener.ready.set()
+        listener.allowed = Mock(return_value=True)
+
+        def capture(*args, **kwargs):
+            listener.fast_text = "hello jarvis"
+            return b"recorded microphone audio"
+
+        listener.capture = capture
+        listener.speak = Mock(
+            side_effect=lambda text: (
+                listener.stop.set() if text == voice.WAKE_REPLY else None
+            )
+        )
+        model = Mock()
+        model.vosk_model_find_word.return_value = 1
+        vosk = types.SimpleNamespace(
+            Model=Mock(return_value=model), KaldiRecognizer=Mock(), SetLogLevel=Mock()
+        )
+        with patch.dict("sys.modules", {"vosk": vosk}):
+            listener.listen()
+        listener.agent.transcribe.assert_not_called()
+        listener.agent.answer.assert_not_called()
+        listener.speak.assert_any_call(voice.WAKE_REPLY)
+
+    def test_chat_warmup_does_not_delay_microphone_readiness(self):
+        listener = voice.BackgroundVoice()
+        listener.agent = Mock()
+
+        def warm():
+            self.assertTrue(listener.ready.is_set())
+            listener.stop.set()
+
+        listener.agent.warm.side_effect = warm
+        listener.supervise_backend()
+
     def test_lock_pause_and_browser_voice_all_release_background_capture(self):
         listener = voice.BackgroundVoice.__new__(voice.BackgroundVoice)
         listener.stop = threading.Event()

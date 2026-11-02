@@ -91,6 +91,7 @@ class FasterWhisperBackend(SpeechBackend):
                 self._model_size,
                 device=self._device,
                 compute_type=compute_type,
+                cpu_threads=2,
             )
         self._last_error = None
         return self._model
@@ -116,9 +117,20 @@ class FasterWhisperBackend(SpeechBackend):
                 with tmp:
                     tmp.write(audio)
 
-                kwargs = {}
+                # Independent voice turns don't benefit from a five-beam search
+                # or carrying text from an unrelated recording into this one.
+                kwargs = {
+                    "beam_size": 1,
+                    "best_of": 1,
+                    "condition_on_previous_text": False,
+                }
                 if language:
                     kwargs["language"] = language
+                if language == "en":
+                    kwargs["initial_prompt"] = (
+                        "Names: Jarvis, ChatGPT, WhatsApp, LinkedIn, Gmail, "
+                        "YouTube, Google Chrome."
+                    )
 
                 segments_iter, info = model.transcribe(tmp.name, **kwargs)
                 segments_list = list(segments_iter)

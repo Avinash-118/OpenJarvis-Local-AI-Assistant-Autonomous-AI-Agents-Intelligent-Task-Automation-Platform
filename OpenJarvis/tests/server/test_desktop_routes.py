@@ -7,6 +7,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from openjarvis.server import desktop_routes as desktop
+from openjarvis.server.chat_workflows import ChatWorkflows
 from openjarvis.server.windows_apps import WindowsApp
 
 
@@ -15,6 +16,10 @@ def no_real_app_launches(monkeypatch):
     monkeypatch.setattr(desktop, "find_app", lambda name: None)
     monkeypatch.setattr(desktop, "activate_app", Mock())
     monkeypatch.setattr(desktop, "installed_apps", lambda: ())
+    ui = Mock()
+    ui.search.return_value = "I filled the WhatsApp chat search."
+    ui.fill.return_value = "Draft ready in the current WhatsApp chat."
+    monkeypatch.setattr(desktop, "_chat_workflows", ChatWorkflows(ui))
 
 
 def command(text, messages=None):
@@ -226,11 +231,14 @@ def test_new_open_command_takes_priority_over_unfinished_email(monkeypatch):
         ("Jarvis, can you please open Whats App?", "WhatsApp"),
         ("open what's app", "WhatsApp"),
         ("open Chat G P T", "ChatGPT"),
+        ("Hello Jarvis, open Chat G B T", "ChatGPT"),
+        ("open chagy pity", "ChatGPT"),
         ("Jarvis, OpenChat, GPT.", "ChatGPT"),
         ("Jarvis, OpenWhatsApp.", "WhatsApp"),
         ("open the WhatsApp desktop app, please", "WhatsApp"),
         ("launch ChatGPT app", "ChatGPT"),
         ("open Spotify", "Spotify"),
+        ("open linkdien", "LinkedIn"),
     ],
 )
 def test_registered_app_preferred_over_website(monkeypatch, text, name):
@@ -256,6 +264,9 @@ def test_registered_app_preferred_over_website(monkeypatch, text, name):
         ("open WhatsApp web", "https://web.whatsapp.com/"),
         ("open Chat GPT in the browser", "https://chatgpt.com/"),
         ("open ChatGPT website", "https://chatgpt.com/"),
+        ("open LinkedIn website", "https://www.linkedin.com/"),
+        ("navigate to chagy pity web page", "https://chatgpt.com/"),
+        ("open Google and type chat gpt", "https://chatgpt.com/"),
         ("open https://chatgpt.com/", "https://chatgpt.com/"),
     ],
 )
@@ -275,6 +286,65 @@ def test_missing_native_app_uses_website_and_says_so(monkeypatch):
     result = run("open chat gpt")
     assert "in your browser" in result["response"]
     opened.assert_called_once_with("https://chatgpt.com/")
+
+
+def test_compound_browser_search_preserves_unknown_query(monkeypatch):
+    opened = Mock()
+    monkeypatch.setattr(desktop, "_open_url", opened)
+    assert run("open Google and type quiet music")["actions"] == ["web_search"]
+    opened.assert_called_once_with("https://www.google.com/search?q=quiet+music")
+
+
+def test_hello_jarvis_answers_without_model_or_app_launch():
+    engine = Mock()
+    result = desktop.execute(
+        command("Hello Jarvis!"), engine, "local", threading.Event()
+    )
+    assert result["handled"] and "I'm here" in result["response"]
+    engine.generate.assert_not_called()
+    desktop.activate_app.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Can you access WhatsApp?",
+        "Do you have access to LinkedIn?",
+        "What can you do in WhatsApp?",
+    ],
+)
+def test_app_capability_answer_uses_actual_supported_workflows_without_model(text):
+    engine = Mock()
+    result = desktop.execute(command(text), engine, "local", threading.Event())
+    assert (
+        "find chats" in result["response"] and "prepare messages" in result["response"]
+    )
+    engine.generate.assert_not_called()
+    desktop.activate_app.assert_not_called()
+
+
+def test_literal_chat_draft_preserves_punctuation_and_filler_named_text():
+    run("Prepare a WhatsApp message for Alice saying Hello, Um!")
+    assert desktop._chat_workflows.pending.text == "Hello, Um!"
+    run("Prepare a WhatsApp message for Alice saying My name is Um")
+    assert desktop._chat_workflows.pending.text == "My name is Um"
+
+
+def test_chat_search_takes_priority_over_unfinished_email(monkeypatch):
+    draft = Mock()
+    monkeypatch.setattr(desktop, "_draft_email", draft)
+    result = run(
+        "find Alice on WhatsApp",
+        [
+            {"role": "user", "content": "write an email"},
+            {
+                "role": "assistant",
+                "content": "What should the email say, and who is it for?",
+            },
+        ],
+    )
+    assert result["actions"] == ["chat_search"]
+    draft.assert_not_called()
 
 
 def test_explicit_missing_desktop_app_does_not_silently_open_browser(monkeypatch):
