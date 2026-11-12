@@ -48,7 +48,7 @@ export function BackgroundVoiceStatus({ compact = false }: { compact?: boolean }
           <div className="text-sm">Always-on voice</div>
           <div className="text-xs mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
             {status.autostart ? 'Starts when you sign in to Windows. ' : ''}
-            Say “Hello Jarvis,” then your request. No microphone click needed.
+            Start each request with “Hello Jarvis” in the same sentence. No microphone click needed.
             {!compact && ' Works with the browser closed.'}
           </div>
         </div>

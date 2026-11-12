@@ -30,7 +30,7 @@ The setup script installs a separate Python 3.13 environment, downloads the free
 
 Run **Enable-NaturalVoice.ps1** to use a free offline neural voice and a conversational reply style. It verifies and downloads the pinned English voice model, keeps a backup of the previous configuration, and restarts Jarvis. **Settings → Speech → Voice** then shows **Neural (local) / Natural English**. Click **Test voice** to hear it.
 
-Jarvis uses shorter, plain-spoken answers, contractions, and recent conversation context. It avoids repeated introductions and stock responses. Follow-up listening lasts 60 seconds after a reply, and the last ten turns are retained within a bounded context window. It remains an AI assistant and does not claim human experiences or completed actions it did not perform.
+Jarvis uses shorter, plain-spoken answers, contractions, and recent conversation context. It avoids repeated introductions and stock responses. Every spoken request must start with **“Hello Jarvis”**; there is no ambient follow-up window. The last ten turns are retained within a bounded context window. It remains an AI assistant and does not claim human experiences or completed actions it did not perform.
 
 For a fresh clone, run **Setup-OpenJarvis.ps1 -WithNaturalVoice**. Later setup and memory-install runs preserve the optional voice dependencies. The voice uses [Piper](https://github.com/OHF-Voice/piper1-gpl), an optional GPL-3.0 dependency installed from PyPI, and the upstream [Lessac English voice](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/lessac/medium). Model weights are kept locally and excluded from Git.
 
@@ -38,7 +38,7 @@ For a fresh clone, run **Setup-OpenJarvis.ps1 -WithNaturalVoice**. Later setup a
 
 Run **Enable-BackgroundVoice.ps1** once. It installs the pinned free voice dependencies, downloads a checksum-pinned [Vosk English model](https://alphacephei.com/vosk/models), adds a shortcut to your Windows user Startup folder, and starts a visible Jarvis tray icon. No administrator account or paid API is required. Repeat setup runs preserve this feature.
 
-After signing in, wait for the spoken ready message. Say **“Jarvis”**, wait for its acknowledgment, then ask your question or give a computer command. You can also say **“Jarvis, open YouTube”** in one sentence. Jarvis speaks the answer, then accepts follow-up requests for 60 seconds before returning to wake-word mode. Say **“stop listening”** to end that conversation and return to waiting for “Jarvis.”
+Startup is silent. Say **“Hello Jarvis, open YouTube”** in one sentence. Jarvis answers that request, then immediately returns to waiting for **“Hello Jarvis”**. Repeat the phrase for each question, correction, or confirmation. Saying “Jarvis” or “Hi Jarvis” alone does not activate it. Saying only “Hello Jarvis” gets a short acknowledgment without opening an unrestricted conversation window. The background listener requires independent full-vocabulary recognition of both wake words before transcribing a request, reducing false activations from noise.
 
 The listener works with the browser closed. **Settings → Speech → Always-on voice** shows its live status and a **Pause microphone** button. The tray icon also offers **Pause microphone**, **Open Jarvis**, and **Quit background voice**. Pausing closes microphone capture; resume using the tray or Settings. Browser voice mode temporarily takes over from the background listener so one request is not handled twice.
 
@@ -50,14 +50,14 @@ It runs while you are signed in and Windows is unlocked. It pauses on the lock s
 
 In **Settings → Speech**, **Voice** shows the active speech backend. With natural voice enabled it shows **Neural (local)**; the basic installation uses **Windows (local)** and an installed voice such as Microsoft David. Click **Test voice** to check playback, then **Start voice mode** to open Chat and begin listening. Read-aloud buttons and automatic spoken replies use the same backend.
 
-If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Speak normally, then pause for about 1.2 seconds. Jarvis transcribes locally, runs your command or answers your question, speaks using the active local voice, and starts listening again. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. This browser mode requires the initial click after opening the app; the separately enabled Windows companion provides automatic wake-word listening.
+If an old browser tab does not show the voice button, press **Ctrl+Shift+R** or open **http://localhost:8766/**. In Chat, click **Start voice mode** once and allow microphone access in Chrome or Edge. Begin each request with **“Hello Jarvis”**, then pause for about 1.2 seconds. Jarvis transcribes locally, ignores speech without the wake phrase, runs the accepted request, and speaks using the active local voice. Keep the Jarvis tab open. Say **stop listening** or click **Stop voice** to end the session. This browser mode requires the initial click after opening the app; the separately enabled Windows companion provides automatic wake-word listening.
 
 Try:
 
-- Say **“Hello Jarvis”** without clicking a microphone, wait for the spoken acknowledgment, then say **“Open ChatGPT.”** The **Always-on voice** panel on Chat shows readiness, the latest recognized words, and the reply. Browser microphone mode is optional.
+- Say **“Hello Jarvis, open ChatGPT”** without clicking a microphone. The **Always-on voice** panel on Chat shows readiness, the latest recognized words, and the reply. Browser microphone mode is optional. Prefix every spoken example below with **“Hello Jarvis”**.
 - Wake greetings are recognized locally while recording and use a cached spoken acknowledgment. English dictation uses a faster decode with app-name hints. The chat model warms in the background and stays loaded for 30 minutes after use to reduce repeated cold starts; longer answers can still take several seconds on a CPU.
 - “Navigate to ChatGPT web page” and “Open Google and type ChatGPT” open the known website directly. Common speech spellings of ChatGPT are normalized without guessing unrelated app names.
-- “Jarvis, open WhatsApp” or “Jarvis, open Chat G P T.” Installed apps open directly; when an app is absent and a web version is known, Jarvis opens its website and says so.
+- “Hello Jarvis, open WhatsApp” or “Hello Jarvis, open Chat G P T.” Installed apps open directly; when an app is absent and a web version is known, Jarvis opens its website and says so.
 - “Open WhatsApp web” or “Open ChatGPT in the browser” explicitly chooses the website. “Open WhatsApp desktop app” explicitly requests the installed app.
 - “What apps can you open?” reads examples from your Windows app list. Store apps and ordinary Start menu applications are discovered automatically; names such as “Chrome,” “VS Code,” and “Microsoft Word” are supported.
 - “Open Gmail” or “Open YouTube.”

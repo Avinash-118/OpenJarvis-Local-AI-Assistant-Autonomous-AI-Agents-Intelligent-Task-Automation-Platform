@@ -46,12 +46,12 @@ $shortcut.TargetPath = $pythonWindowless
 $shortcut.Arguments = $listenerArguments
 $shortcut.WorkingDirectory = $projectRoot
 $shortcut.WindowStyle = 7
-$shortcut.Description = 'Start the local Jarvis assistant at sign-in; say Jarvis to talk.'
+$shortcut.Description = 'Start the local Jarvis assistant at sign-in; say Hello Jarvis before each request.'
 $shortcut.IconLocation = (Join-Path $projectRoot 'OpenJarvis\frontend\public\favicon.ico') + ',0'
 $shortcut.Save()
-@{ enabled = $true; wake_word = 'Jarvis'; shortcut = $shortcutPath } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtimeRoot 'background-voice-enabled.json') -Encoding UTF8
+@{ enabled = $true; wake_word = 'Hello Jarvis'; shortcut = $shortcutPath } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $runtimeRoot 'background-voice-enabled.json') -Encoding UTF8
 if (-not $NoStart) {
     Start-Process -FilePath $pythonWindowless -ArgumentList $listenerArguments -WorkingDirectory $projectRoot -WindowStyle Hidden
 }
-Write-Host 'Jarvis will start when you sign in. Say Jarvis, pause, then give your request.'
+Write-Host 'Jarvis will start when you sign in. Start every request with Hello Jarvis in the same sentence. Startup is silent.'
 Write-Host 'Use the Jarvis tray icon to pause the microphone, open chat, or quit.'

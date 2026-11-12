@@ -745,7 +745,7 @@ def background_voice_status(request: Request):
         "running": running,
         "phase": state.get("phase", "stopped") if running else "stopped",
         "error": state.get("error") if running else None,
-        "wake_word": "Jarvis",
+        "wake_word": "Hello Jarvis",
         "paused": (root / "voice-paused").exists(),
         "autostart": (root / "background-voice-enabled.json").exists(),
         "heard": str(state.get("heard", ""))[:240] if running else "",

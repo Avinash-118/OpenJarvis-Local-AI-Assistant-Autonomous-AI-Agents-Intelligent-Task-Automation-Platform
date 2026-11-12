@@ -18,22 +18,23 @@ class WakeWordTests(unittest.TestCase):
         self.assertIsNone(dialogue.accept("open gmail", 100, woke=True))
         self.assertIsNone(dialogue.accept("open gmail", 100))
 
-    def test_standalone_jarvis_opens_conversation(self):
+    def test_greeting_does_not_open_an_ambient_conversation_window(self):
         dialogue = voice.Dialogue()
-        self.assertEqual(dialogue.accept("Jarvis.", 100, woke=True), "")
-        self.assertEqual(dialogue.accept("what time is it?", 101), "what time is it?")
-        self.assertEqual(dialogue.accept("tell me more", 159), "tell me more")
+        self.assertEqual(dialogue.accept("Hello Jarvis.", 100, woke=True), "")
+        self.assertIsNone(dialogue.accept("what time is it?", 100.1))
+        self.assertIsNone(dialogue.accept("tell me more", 159))
         self.assertIsNone(dialogue.accept("open gmail", 161))
 
     def test_wake_phrase_and_command_in_same_utterance(self):
         dialogue = voice.Dialogue()
         self.assertEqual(
-            dialogue.accept("Hey Jarvis, open YouTube.", 100, woke=True),
+            dialogue.accept("Hello Jarvis, open YouTube.", 100, woke=True),
             "open YouTube.",
         )
         self.assertEqual(
-            dialogue.accept("Jarvis open Gmail", 200, woke=True), "open Gmail"
+            dialogue.accept("Hello Jarvis open Gmail", 200, woke=True), "open Gmail"
         )
+        self.assertIsNone(dialogue.accept("open WhatsApp", 200.1))
 
     def test_substrings_and_unrelated_names_do_not_wake(self):
         dialogue = voice.Dialogue()
@@ -41,6 +42,13 @@ class WakeWordTests(unittest.TestCase):
             "service open gmail",
             "Jarvison open gmail",
             "tell me about Jarvis",
+            "Jarvis",
+            "Hi Jarvis",
+            "Hey Jarvis open WhatsApp",
+            "Hello service",
+            "Hello Jarvison",
+            "HelloJarvis",
+            "someone said hello jarvis",
         ]:
             self.assertIsNone(dialogue.accept(text, 100, woke=True))
 
@@ -49,8 +57,8 @@ class WakeWordTests(unittest.TestCase):
         self.assertIsNotNone(voice.SLEEP.fullmatch("Go to sleep."))
         self.assertIsNone(voice.SLEEP.fullmatch("explain how computers go to sleep"))
 
-    def test_hello_hi_and_punctuated_wake_phrases(self):
-        for phrase in ["Hello Jarvis!", "Hello, Jarvis.", "Hi Jervis", "HelloJarvis"]:
+    def test_only_hello_jarvis_with_case_or_punctuation_changes(self):
+        for phrase in ["Hello Jarvis!", "Hello, Jarvis.", "HELLO JARVIS"]:
             with self.subTest(phrase=phrase):
                 self.assertEqual(voice.Dialogue().accept(phrase, 100, woke=True), "")
         self.assertEqual(
@@ -77,6 +85,25 @@ class WakeWordTests(unittest.TestCase):
         ]:
             self.assertIsNone(voice.fast_greeting([item]))
 
+    def test_independent_recognition_requires_both_confident_wake_words(self):
+        def part(text, confidence=1):
+            return {
+                "text": text,
+                "result": [{"word": w, "conf": confidence} for w in text.split()],
+            }
+
+        self.assertTrue(voice.verified_wake([part("hello jarvis open whatsapp")]))
+        self.assertTrue(voice.verified_wake([part("hello"), part("jarvis")]))
+        for item in [
+            part("hello jarvis", 0.84),
+            part("jarvis open whatsapp"),
+            part("hello service"),
+            part("someone said hello jarvis"),
+            {"text": "hello jarvis"},
+            {"text": "hello jarvis", "result": [{"word": "hello", "conf": 1}]},
+        ]:
+            self.assertFalse(voice.verified_wake([item]))
+
 
 class AudioTests(unittest.TestCase):
     def test_pre_wake_background_speech_is_trimmed_by_word_timestamp(self):
@@ -84,10 +111,16 @@ class AudioTests(unittest.TestCase):
         seed, noise = voice.wake_seed(
             frames,
             4,
-            {"partial_result": [{"word": "jarvis", "start": 3.2}]},
+            {
+                "partial_result": [
+                    {"word": "hello", "start": 2.8},
+                    {"word": "jarvis", "start": 3.2},
+                ]
+            },
             final=False,
         )
-        self.assertLessEqual(len(seed), 12)
+        self.assertEqual(len(seed), 17)
+        self.assertIn(frames[35], seed)  # Keep "hello", not only "jarvis".
         self.assertEqual(seed[-1], frames[-1])
         self.assertNotIn(frames[0], seed)
         self.assertGreaterEqual(noise, 0.001)
@@ -230,7 +263,9 @@ class MicrophoneControlTests(unittest.TestCase):
         listener.allowed = Mock(return_value=True)
 
         def capture(*args, **kwargs):
+            self.assertTrue(kwargs["wake"])
             listener.fast_text = "hello jarvis"
+            listener.wake_verified = True
             return b"recorded microphone audio"
 
         listener.capture = capture
@@ -248,7 +283,34 @@ class MicrophoneControlTests(unittest.TestCase):
             listener.listen()
         listener.agent.transcribe.assert_not_called()
         listener.agent.answer.assert_not_called()
-        listener.speak.assert_any_call(voice.WAKE_REPLY)
+        listener.speak.assert_called_once_with(voice.WAKE_REPLY)
+
+    def test_false_wake_does_not_transcribe_answer_or_speak_on_startup(self):
+        import types
+
+        listener = voice.BackgroundVoice()
+        listener.agent = Mock()
+        listener.ready.set()
+        listener.allowed = Mock(return_value=True)
+        listener.speak = Mock()
+
+        def capture(*args, **kwargs):
+            listener.fast_text = "hello jarvis"
+            listener.wake_verified = False
+            listener.stop.set()
+            return b"ambient noise"
+
+        listener.capture = capture
+        model = Mock()
+        model.vosk_model_find_word.return_value = 1
+        vosk = types.SimpleNamespace(
+            Model=Mock(return_value=model), KaldiRecognizer=Mock(), SetLogLevel=Mock()
+        )
+        with patch.dict("sys.modules", {"vosk": vosk}):
+            listener.listen()
+        listener.agent.transcribe.assert_not_called()
+        listener.agent.answer.assert_not_called()
+        listener.speak.assert_not_called()
 
     def test_chat_warmup_does_not_delay_microphone_readiness(self):
         listener = voice.BackgroundVoice()
@@ -260,6 +322,45 @@ class MicrophoneControlTests(unittest.TestCase):
 
         listener.agent.warm.side_effect = warm
         listener.supervise_backend()
+
+    def test_listener_returns_to_wake_mode_after_every_answer(self):
+        import types
+
+        listener = voice.BackgroundVoice()
+        listener.agent = Mock()
+        listener.agent.transcribe.side_effect = [
+            "Hello Jarvis, open WhatsApp",
+            "tell me about the weather",
+            "Hello Jarvis, open YouTube",
+        ]
+        listener.agent.answer.return_value = "Done."
+        listener.ready.set()
+        listener.allowed = Mock(return_value=True)
+        listener.speak = Mock()
+        count = 0
+
+        def capture(*args, **kwargs):
+            nonlocal count
+            self.assertTrue(kwargs["wake"])
+            count += 1
+            listener.wake_verified = True
+            if count == 3:
+                listener.stop.set()
+            return b"synthetic audio"
+
+        listener.capture = capture
+        model = Mock()
+        model.vosk_model_find_word.return_value = 1
+        vosk = types.SimpleNamespace(
+            Model=Mock(return_value=model), KaldiRecognizer=Mock(), SetLogLevel=Mock()
+        )
+        with patch.dict("sys.modules", {"vosk": vosk}):
+            listener.listen()
+        self.assertEqual(
+            [call.args[0] for call in listener.agent.answer.call_args_list],
+            ["open WhatsApp", "open YouTube"],
+        )
+        self.assertEqual(listener.speak.call_count, 2)
 
     def test_lock_pause_and_browser_voice_all_release_background_capture(self):
         listener = voice.BackgroundVoice.__new__(voice.BackgroundVoice)

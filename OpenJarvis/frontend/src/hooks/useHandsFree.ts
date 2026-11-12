@@ -5,6 +5,7 @@ import { useVoiceSession } from '../lib/voice-session';
 export { useVoiceSession } from '../lib/voice-session';
 import { VoiceActivity } from '../lib/voice-activity';
 import { useTtsStore } from '../lib/tts';
+import { wakeCommand, WAKE_REPLY } from '../lib/wake-command';
 
 type Phase = 'off' | 'starting' | 'listening' | 'transcribing' | 'working' | 'speaking';
 
@@ -161,14 +162,19 @@ export function useHandsFree(onTurn: (text: string) => Promise<string>, busy: bo
         setPhase('transcribing');
         const result = await transcribeAudio(blob);
         if (!live()) break;
-        const text = result.text.trim().replace(/^(?:hey\s+)?(?:jarvis|openjarvis)[,!.:\s]+/i, '').trim();
-        if (!text || /^(?:thank you[.!]?|thanks for watching[.!]?|you[.!]?)$/i.test(text)) continue;
+        const raw = result.text.trim();
+        // A stop request can always silence browser voice, without generating a reply.
+        if (/^(?:please\s+)?(?:stop listening|turn off voice(?: mode)?|stop voice(?: mode)?|go to sleep)[.!]?$/i.test(raw)) {
+          stop(); break;
+        }
+        const text = wakeCommand(raw);
+        if (text === null) continue;
         setHeard(text);
         if (/^(?:please\s+)?(?:stop listening|turn off voice(?: mode)?|stop voice(?: mode)?|go to sleep)[.!]?$/i.test(text)) {
           stop(); break;
         }
         setPhase('working');
-        const reply = await turn.current(text);
+        const reply = text ? await turn.current(text) : WAKE_REPLY;
         if (!live()) break;
         await speak(reply);
         // Let speaker echo fade before starting the next recording.

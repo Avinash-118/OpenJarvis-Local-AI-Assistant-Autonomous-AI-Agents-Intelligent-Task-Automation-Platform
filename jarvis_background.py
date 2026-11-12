@@ -30,14 +30,14 @@ MODEL = STATE / "wake-word" / "vosk-model-small-en-us-0.15"
 URL = "http://127.0.0.1:8766"
 RATE = 16000
 BLOCK = 1280  # 80 ms of mono signed 16-bit PCM.
-FOLLOW_UP_SECONDS = 60
-WAKE_REPLY = "I'm here. What's up?"
+WAKE_PHRASE = "Hello Jarvis"
+WAKE_REPLY = "Hello. Say Hello Jarvis followed by your request."
 PAUSED = STATE / "voice-paused"
 STOP = STATE / "voice-stop"
 LEASE = STATE / "browser-voice.json"
 STATUS = STATE / "background-voice.json"
 WAKE = re.compile(
-    r"^(?:(?:hey|hello|hi|okay|ok)[,\s]*)?(?:jarvis|jervis)\b[,.:!?\s]*",
+    r"^hello[,\s]+jarvis\b[,.:!?\s]*",
     re.IGNORECASE,
 )
 SLEEP = re.compile(
@@ -108,13 +108,16 @@ def wake_seed(
     """Trim pre-roll to the detected word, retaining a small phoneme margin."""
     import numpy as np
 
-    count = min(20, len(frames))
+    count = min(50, len(frames))
     words = result.get("result" if final else "partial_result", [])
-    for word in reversed(words):
-        if word.get("word") != "jarvis":
+    for index in range(len(words) - 1, 0, -1):
+        if [words[index - 1].get("word"), words[index].get("word")] != [
+            "hello",
+            "jarvis",
+        ]:
             continue
         try:
-            seconds = audio_seconds - float(word["start"]) + 0.12
+            seconds = audio_seconds - float(words[index - 1]["start"]) + 0.12
             if math.isfinite(seconds) and seconds >= 0:
                 count = min(len(frames), max(3, math.ceil(seconds * RATE / BLOCK)))
         except (KeyError, ValueError, TypeError):
@@ -160,21 +163,29 @@ class TurnBoundary:
 
 
 class Dialogue:
-    """Require a wake phrase before opening a short conversation window."""
-
-    def __init__(self):
-        self.until = 0.0
+    """Every utterance needs the exact wake phrase; never accept ambient follow-ups."""
 
     def accept(self, text: str, now: float, *, woke: bool = False) -> str | None:
         text = text.strip()
         match = WAKE.match(text)
         if match:
-            self.until = now + FOLLOW_UP_SECONDS
             return text[match.end() :].strip()
-        if woke or now >= self.until:
-            # A wake detector false positive must not execute background speech.
-            return None
-        return text
+        return None
+
+
+def verified_wake(parts: list[dict]) -> bool:
+    """Validate the constrained detector with independent full-vocabulary decoding.
+
+    Whisper output alone cannot activate Jarvis: it can invent words on noise.
+    """
+    text = " ".join(str(part.get("text", "")).strip() for part in parts).strip()
+    words = [word for part in parts for word in part.get("result", [])]
+    return bool(
+        WAKE.match(text)
+        and len(words) >= 2
+        and [word.get("word") for word in words[:2]] == ["hello", "jarvis"]
+        and all(float(word.get("conf", 0)) >= 0.85 for word in words[:2])
+    )
 
 
 def fast_greeting(parts: list[dict]) -> str | None:
@@ -186,6 +197,7 @@ def fast_greeting(parts: list[dict]) -> str | None:
     words = [word for part in parts for word in part.get("result", [])]
     if (
         WAKE.fullmatch(text)
+        and verified_wake(parts)
         and words
         and len(words) == len(text.split())
         and all(float(word.get("conf", 0)) >= 0.8 for word in words)
@@ -337,6 +349,7 @@ class BackgroundVoice:
         self.lock = threading.Lock()
         self.noise_floor = 0.001
         self.fast_text: str | None = None
+        self.wake_verified = False
         self.heard = ""
         self.response = ""
 
@@ -345,7 +358,7 @@ class BackgroundVoice:
             self.phase, self.error = phase, error
         if self.icon:
             labels = {
-                "wake-word": "Say Jarvis",
+                "wake-word": "Say Hello Jarvis",
                 "listening": "Listening to your request",
                 "working": "Thinking",
                 "speaking": "Speaking",
@@ -383,7 +396,7 @@ class BackgroundVoice:
                     "pid": os.getpid(),
                     "phase": self.phase,
                     "error": self.error,
-                    "wake_word": "Jarvis",
+                    "wake_word": WAKE_PHRASE,
                     "updated_at": time.time(),
                     "paused": PAUSED.exists(),
                     "heard": self.heard[:240],
@@ -477,6 +490,7 @@ class BackgroundVoice:
         self.set_phase("listening")
         frames = list(seed or [])
         self.fast_text = None
+        self.wake_verified = False
         parts = []
         if greeting_detector:
             greeting_detector.Reset()
@@ -503,6 +517,7 @@ class BackgroundVoice:
             if boundary.update(float(np.sqrt(np.mean(samples * samples)))):
                 if greeting_detector:
                     parts.append(json.loads(greeting_detector.FinalResult()))
+                    self.wake_verified = verified_wake(parts)
                     self.fast_text = fast_greeting(parts)
                 return wav_bytes(frames) if boundary.started else None
         return None
@@ -528,7 +543,7 @@ class BackgroundVoice:
                     detector.Result() if final else detector.PartialResult()
                 )
                 text = result.get("text" if final else "partial", "")
-                if re.search(r"\bjarvis\b", text):
+                if re.search(r"\bhello\s+jarvis\b", text):
                     seed, self.noise_floor = wake_seed(
                         list(pre_roll), seen * BLOCK / RATE, result, final=bool(final)
                     )
@@ -548,11 +563,7 @@ class BackgroundVoice:
                 RATE,
                 json.dumps(
                     [
-                        "jarvis",
-                        "hey jarvis",
                         "hello jarvis",
-                        "hi jarvis",
-                        "okay jarvis",
                         "[unk]",
                     ]
                 ),
@@ -565,24 +576,18 @@ class BackgroundVoice:
             log.exception("Wake-word model initialization failed")
             self.set_phase("error", str(exc))
             return
-        greeted = False
         while not self.stop.is_set():
             if not self.allowed():
-                self.dialogue.until = 0
                 self.set_phase(self.pause_reason())
                 self.stop.wait(0.5)
                 continue
             if not self.ready.wait(0.5):
                 continue
             try:
-                if not greeted:
-                    self.speak("Jarvis is ready. Say Jarvis when you need me.")
-                    greeted = True
-                woke = time.monotonic() >= self.dialogue.until
                 audio = self.capture(
-                    detector, wake=woke, greeting_detector=greeting_detector
+                    detector, wake=True, greeting_detector=greeting_detector
                 )
-                if audio is None or not self.allowed():
+                if audio is None or not self.allowed() or not self.wake_verified:
                     continue
                 self.set_phase("transcribing")
                 text = self.fast_text or self.agent.transcribe(audio)
@@ -590,15 +595,14 @@ class BackgroundVoice:
                     self.heard, self.response = text, ""
                 if not self.allowed():
                     continue
-                command = self.dialogue.accept(text, time.monotonic(), woke=woke)
+                command = self.dialogue.accept(text, time.monotonic(), woke=True)
                 if command is None:
                     continue
                 if not command:
                     reply = WAKE_REPLY
                 elif SLEEP.fullmatch(command):
-                    self.dialogue.until = 0
                     self.agent.history.clear()
-                    self.speak("Okay. Say Jarvis when you need me.")
+                    self.speak("Okay. Say Hello Jarvis when you need me.")
                     continue
                 else:
                     self.set_phase("working")
@@ -607,11 +611,9 @@ class BackgroundVoice:
                     with self.lock:
                         self.response = reply
                     self.speak(reply)
-                    self.dialogue.until = time.monotonic() + FOLLOW_UP_SECONDS
             except Exception as exc:
                 log.exception("Background voice turn failed")
                 self.set_phase("error", str(exc))
-                self.dialogue.until = 0
                 self.stop.wait(5)
 
     def toggle_pause(self, *_):

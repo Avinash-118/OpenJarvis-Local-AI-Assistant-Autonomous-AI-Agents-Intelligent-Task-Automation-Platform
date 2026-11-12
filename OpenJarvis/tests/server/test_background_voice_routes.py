@@ -100,4 +100,4 @@ def test_live_owned_process_reports_its_real_phase(client, monkeypatch, tmp_path
     )
     status = client.get("/v1/desktop/voice", headers=HEADERS).json()
     assert status["running"] is True
-    assert status["wake_word"] == "Jarvis"
+    assert status["wake_word"] == "Hello Jarvis"
